@@ -1,48 +1,46 @@
 # transcript_clusterviz/core/parse_srt.py
 
 import srt
-from datetime import timedelta
+import pandas as pd
 
 
 class SRTParser:
     """
-    A class responsible for parsing .srt files into a structured format.
+    A class responsible for parsing .srt files into a Pandas DataFrame.
     """
 
     def __init__(self, placeholders=None):
-        """
-        :param placeholders: Optional list of placeholder strings to remove from subtitle text.
-        """
         if placeholders is None:
             placeholders = ["[Music]", "[Laughter]", "[Applause]", "foreign"]
         self.placeholders = placeholders
 
     def clean_subtitle_text(self, text: str) -> str:
-        """
-        Remove unwanted placeholders or tags from subtitle text.
-        """
         for ph in self.placeholders:
             text = text.replace(ph, "")
-        # Basic whitespace cleanup
         return text.strip()
 
-    def parse_file(self, filepath: str):
+    def parse_file(self, filepath: str) -> pd.DataFrame:
         """
-        Parses an .srt file and returns a list of dictionaries.
+        Parses an .srt file into a Pandas DataFrame with columns:
+        ['index', 'start_seconds', 'end_seconds', 'text', 'word_count'].
         """
         with open(filepath, 'r', encoding='utf-8') as f:
             srt_data = f.read()
 
         subtitles = list(srt.parse(srt_data))
-        parsed_results = []
+        records = []
 
-        for index, sub in enumerate(subtitles, start=1):
+        for idx, sub in enumerate(subtitles, start=1):
             cleaned_text = self.clean_subtitle_text(sub.content)
-            parsed_results.append({
-                "index": index,
+            word_count = len(cleaned_text.split()) if cleaned_text else 0
+
+            records.append({
+                "index": idx,
                 "start_seconds": sub.start.total_seconds(),
                 "end_seconds": sub.end.total_seconds(),
-                "text": cleaned_text
+                "text": cleaned_text,
+                "word_count": word_count
             })
 
-        return parsed_results
+        df = pd.DataFrame(records)
+        return df
