@@ -1,0 +1,12 @@
+transcript_clusterviz/
+├── core/
+│   ├── parse_srt.py
+│   └── __init__.py
+├── models/
+│   └── subtitle_model.py  (optional, if you need domain data classes)
+├── controllers/
+│   └── parse_controller.py
+├── views/
+│   └── main_window.py
+├── main.py
+└── requirements.txt
