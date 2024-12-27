@@ -1,14 +1,13 @@
 # transcript_clusterviz/views/main_window.py
 
 import os
-
 from PyQt6.QtWidgets import (
     QMainWindow, QTextEdit, QVBoxLayout, QWidget,
-    QPushButton, QApplication, QFileDialog, QHBoxLayout
+    QPushButton, QApplication, QFileDialog, QHBoxLayout,
+    QSizePolicy
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtWebEngineWidgets import QWebEngineView  # For embedding Plotly HTML
-
+from PyQt6.QtWebEngineWidgets import QWebEngineView
 from controllers.parse_controller import ParseController
 
 
@@ -36,6 +35,14 @@ class MainWindow(QMainWindow):
 
         # A QWebEngineView for showing the Plotly chart
         self.web_view = QWebEngineView()
+        self.web_view.setMinimumHeight(400)
+
+        # Adjust text display height and size policy
+        self.text_display.setMaximumHeight(200)
+        self.text_display.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.web_view.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         # Layout
         button_layout = QHBoxLayout()
@@ -47,9 +54,12 @@ class MainWindow(QMainWindow):
         main_layout = QVBoxLayout()
         main_layout.addLayout(button_layout)
         main_layout.addWidget(self.text_display)
-        main_layout.addWidget(self.web_view)
+        main_layout.addWidget(self.web_view, 1)  # Add stretch factor
         container.setLayout(main_layout)
         self.setCentralWidget(container)
+
+        # Set initial window size but allow resizing
+        self.resize(800, 800)
 
         self.current_filepath = None
 
@@ -92,10 +102,6 @@ class MainWindow(QMainWindow):
         self.text_display.append(preview)
 
     def handle_clustering(self):
-        """
-        Uses the parse controller to cluster the currently loaded subtitles,
-        then shows a small preview of the result (including cluster_ids).
-        """
         if self.parse_controller.current_df is None:
             self.text_display.append(
                 "No data to cluster. Please load an SRT file first.")
@@ -117,11 +123,23 @@ class MainWindow(QMainWindow):
                 "No data to plot. Please load an SRT file first.")
             return
 
-        # Calculate density
-        density_df = self.parse_controller.calculate_density()
-        # Create Plotly figure HTML
-        chart_html = self.parse_controller.plot_density_chart(density_df)
+        print("DEBUG: Starting density chart handling")
 
-        # Load the HTML into the QWebEngineView
-        self.web_view.setHtml(chart_html)
-        self.text_display.append("\n--- Density Chart Updated ---\n")
+        try:
+            # Calculate density
+            density_df = self.parse_controller.calculate_density()
+            print("DEBUG: Density calculation completed")
+
+            # Create Plotly figure HTML
+            chart_html = self.parse_controller.plot_density_chart(density_df)
+            print("DEBUG: Chart HTML generated")
+
+            # Load the HTML into the QWebEngineView
+            self.web_view.setHtml(chart_html)
+            print("DEBUG: HTML set to QWebEngineView")
+
+            self.text_display.append("\n--- Density Chart Updated ---\n")
+        except Exception as e:
+            print(f"DEBUG: Error occurred: {str(e)}")
+            self.text_display.append(
+                f"\nError creating density chart: {str(e)}\n")
