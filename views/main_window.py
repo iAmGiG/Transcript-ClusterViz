@@ -4,7 +4,7 @@ import os
 from PyQt6.QtWidgets import (
     QMainWindow, QTextEdit, QVBoxLayout, QWidget,
     QPushButton, QApplication, QFileDialog, QHBoxLayout,
-    QSizePolicy, QSlider, QLabel, QMessageBox
+    QSizePolicy, QSlider, QLabel, QMessageBox, QTabWidget, QStatusBar
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -20,57 +20,94 @@ class MainWindow(QMainWindow):
         # Controller with default bin_size=60s, gap_threshold=5s
         self.parse_controller = ParseController(gap_threshold=5.0, bin_size=60)
 
-        # UI elements
-        self.text_display = QTextEdit()
-        self.text_display.setReadOnly(True)
-
-        self.cluster_button = QPushButton("Perform Time-Based Clustering")
-        self.cluster_button.clicked.connect(self.handle_clustering)
-
-        self.density_button = QPushButton("Plot Density Chart")
-        self.density_button.clicked.connect(self.handle_density)
-
+        # Create main toolbar with file operations
+        toolbar_widget = QWidget()
+        toolbar_layout = QHBoxLayout()
         self.open_file_button = QPushButton("Open SRT File")
         self.open_file_button.clicked.connect(self.handle_open_file)
+        toolbar_layout.addWidget(self.open_file_button)
+        toolbar_widget.setLayout(toolbar_layout)
 
-        # A QWebEngineView for showing the Plotly chart
-        self.web_view = QWebEngineView()
-        self.web_view.setMinimumHeight(400)
+        # Tabs for clustering and density
+        self.tabs = QTabWidget()
+        self.clustering_tab = QWidget()
+        self.density_tab = QWidget()
 
-        # Adjust text display height and size policy
-        self.text_display.setMaximumHeight(200)
-        self.text_display.setSizePolicy(
+        # Clustering Tab
+        self.cluster_button = QPushButton("Perform Time-Based Clustering")
+        self.cluster_button.clicked.connect(self.handle_clustering)
+        self.cluster_results = QTextEdit()
+        self.cluster_results.setReadOnly(True)
+        self.cluster_results.setMaximumHeight(200)
+        self.cluster_results.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.web_view.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
-        # Layout
-        button_layout = QHBoxLayout()
-        button_layout.addWidget(self.open_file_button)
-        button_layout.addWidget(self.cluster_button)
-        button_layout.addWidget(self.density_button)
+        cluster_layout = QVBoxLayout()
+        cluster_layout.addWidget(self.cluster_button)
+        cluster_layout.addWidget(self.cluster_results)
+        self.clustering_tab.setLayout(cluster_layout)
 
-        container = QWidget()
-        main_layout = QVBoxLayout()
-        main_layout.addLayout(button_layout)
-        main_layout.addWidget(self.text_display)
-        main_layout.addWidget(self.web_view, 1)  # Add stretch factor
-        container.setLayout(main_layout)
-        self.setCentralWidget(container)
+        # Density Tab
+        density_controls = QWidget()
+        density_controls_layout = QHBoxLayout()
 
-        # Set initial window size but allow resizing
-        self.resize(800, 800)
-        self.current_filepath = None
+        # Add density button
+        self.density_button = QPushButton("Plot Density Chart")
+        self.density_button.clicked.connect(self.handle_density)
+        density_controls_layout.addWidget(self.density_button)
 
-        # --------Sliders---------
+        # Add bin size slider
+        slider_container = QWidget()
+        slider_layout = QHBoxLayout()
+        slider_label = QLabel("Bin Size (seconds):")
         self.bin_slider = QSlider(Qt.Orientation.Horizontal)
         self.bin_slider.setRange(10, 300)  # Bin size range: 10s to 5m
         self.bin_slider.setValue(60)  # Default bin size
         self.bin_slider.valueChanged.connect(self.handle_bin_size_change)
 
-        slider_label = QLabel("Bin Size (seconds):")
-        button_layout.addWidget(slider_label)
-        button_layout.addWidget(self.bin_slider)
+        # Add value label that updates with slider
+        self.bin_size_value_label = QLabel("60")
+
+        slider_layout.addWidget(slider_label)
+        slider_layout.addWidget(self.bin_slider)
+        slider_layout.addWidget(self.bin_size_value_label)
+        slider_container.setLayout(slider_layout)
+        density_controls_layout.addWidget(slider_container)
+
+        density_controls.setLayout(density_controls_layout)
+
+        # Web view for the plot
+        self.web_view = QWebEngineView()
+        self.web_view.setMinimumHeight(400)
+        self.web_view.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+        # Combine all density elements
+        density_layout = QVBoxLayout()
+        density_layout.addWidget(density_controls)
+        density_layout.addWidget(self.web_view)
+        self.density_tab.setLayout(density_layout)
+
+        # Add tabs
+        self.tabs.addTab(self.clustering_tab, "Clustering")
+        self.tabs.addTab(self.density_tab, "Density Chart")
+
+        # Status bar for updates
+        self.status_bar = QStatusBar()
+        self.setStatusBar(self.status_bar)
+
+        # Main layout
+        container = QWidget()
+        main_layout = QVBoxLayout()
+        main_layout.addWidget(toolbar_widget)
+        main_layout.addWidget(self.tabs)
+        container.setLayout(main_layout)
+        self.setCentralWidget(container)
+
+        # Set initial window size but allow resizing
+        self.resize(800, 800)
+
+        self.current_filepath = None
 
     def show_error(self, message):
         error_dialog = QMessageBox(self)
@@ -107,35 +144,42 @@ class MainWindow(QMainWindow):
 
     def handle_srt_file(self, filepath):
         if not os.path.exists(filepath):
-            self.text_display.append(f"File not found: {filepath}")
+            self.status_bar.showMessage(f"File not found: {filepath}")
             return
 
         self.current_filepath = filepath
         df = self.parse_controller.parse_srt_file(filepath)
-        self.text_display.clear()
-        self.text_display.append(f"Loaded SRT file: {filepath}\n")
+        self.cluster_results.clear()
+        self.cluster_results.append(f"Loaded SRT file: {filepath}\n")
         preview = df.head(5).to_string(index=False)
-        self.text_display.append(preview)
+        self.cluster_results.append(preview)
+        self.status_bar.showMessage(f"Loaded: {filepath}", 5000)
 
     def handle_clustering(self):
+        """
+        Handles clustering and updates the clustering tab.
+        """
         if self.parse_controller.current_df is None:
-            self.text_display.append(
+            self.status_bar.showMessage(
                 "No data to cluster. Please load an SRT file first.")
             return
 
         clustered_df = self.parse_controller.cluster_by_time()
-        self.text_display.append("\n--- Time-Based Clustering Results ---\n")
+        self.cluster_results.clear()
+        self.cluster_results.append("--- Time-Based Clustering Results ---\n")
         preview = clustered_df.head(5).to_string(index=False)
-        self.text_display.append(preview)
+        self.cluster_results.append(preview)
         unique_clusters = clustered_df["cluster_id"].nunique()
-        self.text_display.append(f"\nTotal clusters found: {unique_clusters}")
+        self.cluster_results.append(
+            f"\nTotal clusters found: {unique_clusters}")
+        self.status_bar.showMessage("Clustering completed", 5000)
 
     def handle_density(self):
         """
-        Calculate and plot the words-per-bin chart in the embedded QWebEngineView.
+        Handles density chart plotting and updates the density tab.
         """
         if self.parse_controller.current_df is None:
-            self.text_display.append(
+            self.status_bar.showMessage(
                 "No data to plot. Please load an SRT file first.")
             return
 
@@ -154,13 +198,19 @@ class MainWindow(QMainWindow):
             self.web_view.setHtml(chart_html)
             print("DEBUG: HTML set to QWebEngineView")
 
-            self.text_display.append("\n--- Density Chart Updated ---\n")
+            self.status_bar.showMessage("Density chart updated", 5000)
         except Exception as e:
             print(f"DEBUG: Error occurred: {str(e)}")
-            self.text_display.append(
-                f"\nError creating density chart: {str(e)}\n")
+            self.status_bar.showMessage(
+                f"Error creating density chart: {str(e)}")
 
-    # bin zie handler
     def handle_bin_size_change(self, value):
+        """
+        Updates the bin size in the controller and refreshes the density plot
+        """
+        self.bin_size_value_label.setText(str(value))  # Update the label
         self.parse_controller.bin_size = value
-        self.handle_density()  # Recalculate density with new bin size
+        
+        if self.parse_controller.current_df is not None and self.tabs.currentWidget() == self.density_tab:
+            self.handle_density()  # Recalculate density with new bin size
+            self.status_bar.showMessage(f"Updated bin size to {value} seconds", 3000)
