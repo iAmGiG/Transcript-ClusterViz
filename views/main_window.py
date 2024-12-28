@@ -1,6 +1,7 @@
 # transcript_clusterviz/views/main_window.py
 
 import os
+import matplotlib.pyplot as plt
 from PyQt6.QtWidgets import (
     QMainWindow, QTextEdit, QVBoxLayout, QWidget,
     QPushButton, QApplication, QFileDialog, QHBoxLayout,
@@ -50,9 +51,14 @@ class MainWindow(QMainWindow):
             QTableWidget.ScrollMode.ScrollPerPixel)
         self.cluster_table.resizeColumnsToContents()
         self.cluster_table.resizeRowsToContents()
+        self.export_clusters_button = QPushButton("Export Clusters")
+        self.export_clusters_button.clicked.connect(
+            self.handle_export_clusters)
+
         cluster_layout = QVBoxLayout()
         cluster_layout.addWidget(self.cluster_table)
         cluster_layout.addWidget(self.cluster_button)
+        cluster_layout.addWidget(self.export_clusters_button)
         self.clustering_tab.setLayout(cluster_layout)
 
         # Gap threshold slider
@@ -295,3 +301,58 @@ class MainWindow(QMainWindow):
             unique_clusters = clustered_df["cluster_id"].nunique()
             self.status_bar.showMessage(
                 f"Updated clustering with gap threshold: {value}s", 3000)
+
+    def handle_export_clusters(self):
+        """
+        Exports clustering results as an image or PDF using Matplotlib.
+        """
+        if self.parse_controller.current_df is None or "cluster_id" not in self.parse_controller.current_df.columns:
+            self.status_bar.showMessage(
+                "No clustering data available to export.")
+            return
+
+        # Open file dialog to select save location and file type
+        file_dialog = QFileDialog()
+        file_path, _ = file_dialog.getSaveFileName(
+            self, "Save Clusters As", "", "PNG Files (*.png);;PDF Files (*.pdf)")
+
+        if not file_path:
+            self.status_bar.showMessage("Export canceled.")
+            return
+
+        # Generate a Matplotlib figure
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.axis('tight')
+        ax.axis('off')
+
+        # Prepare data for the table
+        df = self.parse_controller.current_df[[
+            "index", "start_seconds", "end_seconds", "text", "cluster_id"]]
+        data = df.values.tolist()
+        column_labels = df.columns.tolist()
+
+        # Create a table
+        table = ax.table(cellText=data, colLabels=column_labels, loc='center')
+        table.auto_set_font_size(False)
+        table.set_fontsize(8)
+        table.auto_set_column_width(col=range(len(column_labels)))
+
+        # Add metadata as a title
+        gap_threshold = self.parse_controller.gap_threshold
+        num_clusters = df["cluster_id"].nunique()
+        ax.set_title(f"Clustering Results\nTime Gap Threshold: {gap_threshold}s, Total Clusters: {num_clusters}",
+                     fontsize=12, pad=20)
+
+        # Save the figure
+        try:
+            if file_path.endswith(".png"):
+                plt.savefig(file_path, format="png", bbox_inches="tight")
+            elif file_path.endswith(".pdf"):
+                plt.savefig(file_path, format="pdf", bbox_inches="tight")
+            self.status_bar.showMessage(
+                f"Clusters exported to {file_path}", 5000)
+        except Exception as e:
+            self.status_bar.showMessage(
+                f"Failed to export clusters: {str(e)}", 5000)
+        finally:
+            plt.close(fig)
