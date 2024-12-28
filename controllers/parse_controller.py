@@ -82,30 +82,51 @@ class ParseController:
 
     def plot_density_chart(self, density_df: pd.DataFrame):
         """
-        Creates a Plotly figure for words-per-bin vs. time_bin, returning an HTML string.
+        Creates a Plotly figure for words-per-bin vs. time_bin, with cluster visualization.
         """
         # Convert bin_index to minutes for better readability
         density_df['time_minutes'] = density_df['bin_index'] * \
             (self.bin_size / 60)
+
+        # Add cluster information
+        if self.current_df is not None and "cluster_id" in self.current_df.columns:
+            # Map clusters to density data for coloring
+            density_df = pd.merge(
+                density_df,
+                self.current_df[["bin_index", "cluster_id"]].drop_duplicates(),
+                on="bin_index",
+                how="left"
+            )
+            color_discrete_map = {
+                cluster_id: f"rgba({50 + cluster_id * 20 % 255}, {80 + cluster_id * 30 % 255}, {120 + cluster_id * 40 % 255}, 0.8)"
+                for cluster_id in density_df["cluster_id"].unique() if pd.notnull(cluster_id)
+            }
+        else:
+            color_discrete_map = {}
 
         # Create figure
         fig = px.bar(
             density_df,
             x='time_minutes',
             y='words_per_bin',
+            color='cluster_id',
+            color_discrete_map=color_discrete_map,
             text='words_per_bin',  # Adds text to bars
             labels={
-                'time_minutes': 'Time (minutes)', 'words_per_bin': 'Words per Minute'},
-            title='Word Density Over Time'
+                'time_minutes': 'Time (minutes)',
+                'words_per_bin': 'Words per Minute',
+                'cluster_id': 'Cluster ID'
+            },
+            title='Word Density Over Time with Clustering'
         )
 
-        # Update layout with dark theme
+        # Update layout
         fig.update_layout(
             template='plotly_dark',
-            plot_bgcolor='rgba(15,15,15,1)',  # Darker background
-            paper_bgcolor='rgba(15,15,15,1)',  # Darker background
-            font=dict(color='white'),  # White text
-            title_font_color='white',  # White title
+            plot_bgcolor='rgba(15,15,15,1)',
+            paper_bgcolor='rgba(15,15,15,1)',
+            font=dict(color='white'),
+            title_font_color='white',
             height=400,
             margin=dict(t=50, b=50, l=50, r=50)
         )
@@ -115,53 +136,45 @@ class ParseController:
             showgrid=True,
             gridwidth=1,
             gridcolor='rgba(128,128,128,0.2)',
-            color='white'  # Axis labels in white
+            color='white'
         )
         fig.update_yaxes(
             showgrid=True,
             gridwidth=1,
             gridcolor='rgba(128,128,128,0.2)',
-            color='white'  # Axis labels in white
+            color='white'
         )
-
-        # Update bar colors
-        fig.update_traces(marker_color='rgb(99,110,250)')  # A nice blue color
 
         return fig.to_html(
             full_html=False,
             include_plotlyjs='cdn',
             config={
                 'responsive': True,
-                'displayModeBar': False  # Hide the modebar
+                'displayModeBar': False
             }
         )
 
     def handle_density(self):
         """
-        Calculate and plot the words-per-bin chart in the embedded QWebEngineView.
+        Handles density chart plotting and updates the density tab.
         """
         if self.parse_controller.current_df is None:
-            self.text_display.append(
+            self.status_bar.showMessage(
                 "No data to plot. Please load an SRT file first.")
             return
 
-        print("DEBUG: Starting density chart handling")  # Debug print
+        # Ensure clustering is updated before plotting
+        if "cluster_id" not in self.parse_controller.current_df.columns:
+            self.parse_controller.current_df = self.parse_controller.cluster_by_time()
 
         try:
-            # Calculate density
+            # Calculate density and plot
             density_df = self.parse_controller.calculate_density()
-            print("DEBUG: Density calculation completed")  # Debug print
-
-            # Create Plotly figure HTML
             chart_html = self.parse_controller.plot_density_chart(density_df)
-            print("DEBUG: Chart HTML generated")  # Debug print
-
-            # Load the HTML into the QWebEngineView
             self.web_view.setHtml(chart_html)
-            print("DEBUG: HTML set to QWebEngineView")  # Debug print
-
-            self.text_display.append("\n--- Density Chart Updated ---\n")
+            self.status_bar.showMessage(
+                "Density chart updated with clustering", 5000)
         except Exception as e:
-            print(f"DEBUG: Error occurred: {str(e)}")  # Debug print
-            self.text_display.append(
-                f"\nError creating density chart: {str(e)}\n")
+            print(f"DEBUG: Error occurred: {str(e)}")
+            self.status_bar.showMessage(
+                f"Error creating density chart: {str(e)}")
