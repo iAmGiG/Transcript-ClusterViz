@@ -201,22 +201,17 @@ class MainWindow(QMainWindow):
                 "No data to plot. Please load an SRT file first.")
             return
 
-        print("DEBUG: Starting density chart handling")
+        # Ensure clustering is updated before plotting
+        if "cluster_id" not in self.parse_controller.current_df.columns:
+            self.parse_controller.current_df = self.parse_controller.cluster_by_time()
 
         try:
-            # Calculate density
+            # Calculate density and plot
             density_df = self.parse_controller.calculate_density()
-            print("DEBUG: Density calculation completed")
-
-            # Create Plotly figure HTML
             chart_html = self.parse_controller.plot_density_chart(density_df)
-            print("DEBUG: Chart HTML generated")
-
-            # Load the HTML into the QWebEngineView
             self.web_view.setHtml(chart_html)
-            print("DEBUG: HTML set to QWebEngineView")
-
-            self.status_bar.showMessage("Density chart updated", 5000)
+            self.status_bar.showMessage(
+                "Density chart updated with clustering", 5000)
         except Exception as e:
             print(f"DEBUG: Error occurred: {str(e)}")
             self.status_bar.showMessage(

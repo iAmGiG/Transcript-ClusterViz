@@ -153,28 +153,3 @@ class ParseController:
                 'displayModeBar': False
             }
         )
-
-    def handle_density(self):
-        """
-        Handles density chart plotting and updates the density tab.
-        """
-        if self.parse_controller.current_df is None:
-            self.status_bar.showMessage(
-                "No data to plot. Please load an SRT file first.")
-            return
-
-        # Ensure clustering is updated before plotting
-        if "cluster_id" not in self.parse_controller.current_df.columns:
-            self.parse_controller.current_df = self.parse_controller.cluster_by_time()
-
-        try:
-            # Calculate density and plot
-            density_df = self.parse_controller.calculate_density()
-            chart_html = self.parse_controller.plot_density_chart(density_df)
-            self.web_view.setHtml(chart_html)
-            self.status_bar.showMessage(
-                "Density chart updated with clustering", 5000)
-        except Exception as e:
-            print(f"DEBUG: Error occurred: {str(e)}")
-            self.status_bar.showMessage(
-                f"Error creating density chart: {str(e)}")
