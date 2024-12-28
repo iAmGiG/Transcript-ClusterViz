@@ -47,6 +47,24 @@ class MainWindow(QMainWindow):
         cluster_layout.addWidget(self.cluster_results)
         self.clustering_tab.setLayout(cluster_layout)
 
+        # Gap threshold slider
+        threshold_container = QWidget()
+        threshold_layout = QHBoxLayout()
+        threshold_label = QLabel("Time Gap Threshold (seconds):")
+        self.threshold_slider = QSlider(Qt.Orientation.Horizontal)
+        self.threshold_slider.setRange(1, 20)  # Range: 1s to 20s
+        self.threshold_slider.setValue(5)  # Default value
+        self.threshold_slider.valueChanged.connect(
+            self.handle_threshold_change)
+        self.threshold_value_label = QLabel("5")
+
+        threshold_layout.addWidget(threshold_label)
+        threshold_layout.addWidget(self.threshold_slider)
+        threshold_layout.addWidget(self.threshold_value_label)
+        threshold_container.setLayout(threshold_layout)
+        # Insert below the clustering button
+        cluster_layout.insertWidget(1, threshold_container)
+
         # Density Tab
         density_controls = QWidget()
         density_controls_layout = QHBoxLayout()
@@ -210,7 +228,29 @@ class MainWindow(QMainWindow):
         """
         self.bin_size_value_label.setText(str(value))  # Update the label
         self.parse_controller.bin_size = value
-        
+
         if self.parse_controller.current_df is not None and self.tabs.currentWidget() == self.density_tab:
             self.handle_density()  # Recalculate density with new bin size
-            self.status_bar.showMessage(f"Updated bin size to {value} seconds", 3000)
+            self.status_bar.showMessage(
+                f"Updated bin size to {value} seconds", 3000)
+
+    def handle_threshold_change(self, value):
+        """
+        Updates the gap_threshold in ParseController and refreshes clustering results.
+        """
+        self.threshold_value_label.setText(str(value))  # Update label
+        self.parse_controller.gap_threshold = value  # Update threshold
+
+        # Re-run clustering if data is loaded
+        if self.parse_controller.current_df is not None:
+            clustered_df = self.parse_controller.cluster_by_time()
+            self.cluster_results.clear()
+            self.cluster_results.append(
+                "--- Updated Time-Based Clustering Results ---\n")
+            preview = clustered_df.head(5).to_string(index=False)
+            self.cluster_results.append(preview)
+            unique_clusters = clustered_df["cluster_id"].nunique()
+            self.cluster_results.append(
+                f"\nTotal clusters found: {unique_clusters}")
+            self.status_bar.showMessage(
+                f"Updated clustering with gap threshold: {value}s", 3000)
