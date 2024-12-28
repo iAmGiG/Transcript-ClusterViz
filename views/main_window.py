@@ -169,16 +169,32 @@ class MainWindow(QMainWindow):
                     self.text_display.append("Not an .srt file: " + filepath)
 
     def handle_srt_file(self, filepath):
+        """
+        Handles loading an SRT file and displaying the preview in the clustering tab.
+        """
         if not os.path.exists(filepath):
             self.status_bar.showMessage(f"File not found: {filepath}")
             return
 
         self.current_filepath = filepath
         df = self.parse_controller.parse_srt_file(filepath)
-        self.cluster_results.clear()
-        self.cluster_results.append(f"Loaded SRT file: {filepath}\n")
-        preview = df.head(5).to_string(index=False)
-        self.cluster_results.append(preview)
+
+        # Clear previous table data
+        self.cluster_table.setRowCount(0)
+
+        # Display first 5 rows in the table as a preview
+        for i, row in df.head(5).iterrows():
+            self.cluster_table.insertRow(i)
+            self.cluster_table.setItem(
+                i, 0, QTableWidgetItem(str(row["index"])))
+            self.cluster_table.setItem(
+                i, 1, QTableWidgetItem(f"{row['start_seconds']:.2f}"))
+            self.cluster_table.setItem(
+                i, 2, QTableWidgetItem(f"{row['end_seconds']:.2f}"))
+            self.cluster_table.setItem(i, 3, QTableWidgetItem(row["text"]))
+            # Placeholder for cluster_id
+            self.cluster_table.setItem(i, 4, QTableWidgetItem("N/A"))
+
         self.status_bar.showMessage(f"Loaded: {filepath}", 5000)
 
     def handle_clustering(self):
@@ -259,13 +275,21 @@ class MainWindow(QMainWindow):
         # Re-run clustering if data is loaded
         if self.parse_controller.current_df is not None:
             clustered_df = self.parse_controller.cluster_by_time()
-            self.cluster_results.clear()
-            self.cluster_results.append(
-                "--- Updated Time-Based Clustering Results ---\n")
-            preview = clustered_df.head(5).to_string(index=False)
-            self.cluster_results.append(preview)
+
+            # Clear and repopulate the table with updated clustering
+            self.cluster_table.setRowCount(0)
+            for i, row in clustered_df.iterrows():
+                self.cluster_table.insertRow(i)
+                self.cluster_table.setItem(
+                    i, 0, QTableWidgetItem(str(row["index"])))
+                self.cluster_table.setItem(
+                    i, 1, QTableWidgetItem(f"{row['start_seconds']:.2f}"))
+                self.cluster_table.setItem(
+                    i, 2, QTableWidgetItem(f"{row['end_seconds']:.2f}"))
+                self.cluster_table.setItem(i, 3, QTableWidgetItem(row["text"]))
+                self.cluster_table.setItem(
+                    i, 4, QTableWidgetItem(str(row["cluster_id"])))
+
             unique_clusters = clustered_df["cluster_id"].nunique()
-            self.cluster_results.append(
-                f"\nTotal clusters found: {unique_clusters}")
             self.status_bar.showMessage(
                 f"Updated clustering with gap threshold: {value}s", 3000)
