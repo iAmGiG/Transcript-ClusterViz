@@ -239,6 +239,7 @@ class MainWindow(QMainWindow):
 
         # Ensure clustering is updated before plotting
         if "cluster_id" not in self.parse_controller.current_df.columns:
+            print("DEBUG: Recalculating clustering as 'cluster_id' is missing.")
             self.parse_controller.current_df = self.parse_controller.cluster_by_time()
 
         try:
@@ -275,6 +276,7 @@ class MainWindow(QMainWindow):
         # Re-run clustering if data is loaded
         if self.parse_controller.current_df is not None:
             clustered_df = self.parse_controller.cluster_by_time()
+            self.parse_controller.current_df = clustered_df  # Ensure `current_df` is updated
 
             # Clear and repopulate the table with updated clustering
             self.cluster_table.setRowCount(0)

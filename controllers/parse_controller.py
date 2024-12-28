@@ -52,6 +52,11 @@ class ParseController:
 
         df["cluster_id"] = cluster_ids
         df.drop(columns=["prev_end", "gap"], inplace=True)
+
+        print("DEBUG: Clustering completed. Cluster IDs assigned.")
+        # Debug print
+        print(df[["start_seconds", "end_seconds", "cluster_id"]].head())
+
         return df
 
     def calculate_density(self, df: pd.DataFrame = None):
