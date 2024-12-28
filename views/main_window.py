@@ -1,5 +1,7 @@
 # transcript_clusterviz/views/main_window.py
 
+from views.export_worker import ExportWorker
+from controllers.parse_controller import ParseController
 import os
 import matplotlib.pyplot as plt
 from PyQt6.QtWidgets import (
@@ -10,7 +12,6 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from controllers.parse_controller import ParseController
 
 
 class MainWindow(QMainWindow):
@@ -304,7 +305,7 @@ class MainWindow(QMainWindow):
 
     def handle_export_clusters(self):
         """
-        Exports clustering results as an image or PDF using Matplotlib.
+        Exports clustering results in various formats using threading.
         """
         if self.parse_controller.current_df is None or "cluster_id" not in self.parse_controller.current_df.columns:
             self.status_bar.showMessage(
@@ -314,45 +315,38 @@ class MainWindow(QMainWindow):
         # Open file dialog to select save location and file type
         file_dialog = QFileDialog()
         file_path, _ = file_dialog.getSaveFileName(
-            self, "Save Clusters As", "", "PNG Files (*.png);;PDF Files (*.pdf)")
+            self,
+            "Save Clusters As",
+            "",
+            "PNG Files (*.png);;PDF Files (*.pdf);;CSV Files (*.csv);;Excel Files (*.xlsx)"
+        )
 
         if not file_path:
             self.status_bar.showMessage("Export canceled.")
             return
 
-        # Generate a Matplotlib figure
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.axis('tight')
-        ax.axis('off')
+        # Determine file type
+        file_type = file_path.split(".")[-1].lower()
+        if file_type not in ["png", "pdf", "csv", "xlsx"]:
+            self.status_bar.showMessage("Unsupported file format.")
+            return
 
-        # Prepare data for the table
+        # Prepare data and metadata
         df = self.parse_controller.current_df[[
             "index", "start_seconds", "end_seconds", "text", "cluster_id"]]
-        data = df.values.tolist()
-        column_labels = df.columns.tolist()
-
-        # Create a table
-        table = ax.table(cellText=data, colLabels=column_labels, loc='center')
-        table.auto_set_font_size(False)
-        table.set_fontsize(8)
-        table.auto_set_column_width(col=range(len(column_labels)))
-
-        # Add metadata as a title
         gap_threshold = self.parse_controller.gap_threshold
         num_clusters = df["cluster_id"].nunique()
-        ax.set_title(f"Clustering Results\nTime Gap Threshold: {gap_threshold}s, Total Clusters: {num_clusters}",
-                     fontsize=12, pad=20)
 
-        # Save the figure
-        try:
-            if file_path.endswith(".png"):
-                plt.savefig(file_path, format="png", bbox_inches="tight")
-            elif file_path.endswith(".pdf"):
-                plt.savefig(file_path, format="pdf", bbox_inches="tight")
-            self.status_bar.showMessage(
-                f"Clusters exported to {file_path}", 5000)
-        except Exception as e:
-            self.status_bar.showMessage(
-                f"Failed to export clusters: {str(e)}", 5000)
-        finally:
-            plt.close(fig)
+        # Start export in a separate thread
+        self.export_thread = ExportWorker(
+            df, file_path, file_type, gap_threshold, num_clusters)
+        self.export_thread.finished.connect(self.on_export_finished)
+        self.export_thread.start()
+
+        self.status_bar.showMessage("Exporting...")
+
+    def on_export_finished(self, message):
+        """
+        Handle completion of the export thread.
+        """
+        self.status_bar.showMessage(message)
