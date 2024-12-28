@@ -4,7 +4,7 @@ import os
 from PyQt6.QtWidgets import (
     QMainWindow, QTextEdit, QVBoxLayout, QWidget,
     QPushButton, QApplication, QFileDialog, QHBoxLayout,
-    QSizePolicy
+    QSizePolicy, QSlider, QLabel, QMessageBox
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -60,8 +60,24 @@ class MainWindow(QMainWindow):
 
         # Set initial window size but allow resizing
         self.resize(800, 800)
-
         self.current_filepath = None
+
+        # --------Sliders---------
+        self.bin_slider = QSlider(Qt.Orientation.Horizontal)
+        self.bin_slider.setRange(10, 300)  # Bin size range: 10s to 5m
+        self.bin_slider.setValue(60)  # Default bin size
+        self.bin_slider.valueChanged.connect(self.handle_bin_size_change)
+
+        slider_label = QLabel("Bin Size (seconds):")
+        button_layout.addWidget(slider_label)
+        button_layout.addWidget(self.bin_slider)
+
+    def show_error(self, message):
+        error_dialog = QMessageBox(self)
+        error_dialog.setWindowTitle("Error")
+        error_dialog.setText(message)
+        error_dialog.setIcon(QMessageBox.Icon.Warning)
+        error_dialog.exec()
 
     def handle_open_file(self):
         """
@@ -143,3 +159,8 @@ class MainWindow(QMainWindow):
             print(f"DEBUG: Error occurred: {str(e)}")
             self.text_display.append(
                 f"\nError creating density chart: {str(e)}\n")
+
+    # bin zie handler
+    def handle_bin_size_change(self, value):
+        self.parse_controller.bin_size = value
+        self.handle_density()  # Recalculate density with new bin size

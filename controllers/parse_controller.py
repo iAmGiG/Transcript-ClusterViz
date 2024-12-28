@@ -93,10 +93,9 @@ class ParseController:
             density_df,
             x='time_minutes',
             y='words_per_bin',
+            text='words_per_bin',  # Adds text to bars
             labels={
-                'time_minutes': 'Time (minutes)',
-                'words_per_bin': 'Words per Minute'
-            },
+                'time_minutes': 'Time (minutes)', 'words_per_bin': 'Words per Minute'},
             title='Word Density Over Time'
         )
 
