@@ -4,7 +4,8 @@ import os
 from PyQt6.QtWidgets import (
     QMainWindow, QTextEdit, QVBoxLayout, QWidget,
     QPushButton, QApplication, QFileDialog, QHBoxLayout,
-    QSizePolicy, QSlider, QLabel, QMessageBox, QTabWidget, QStatusBar
+    QSizePolicy, QSlider, QLabel, QMessageBox, QTabWidget, QStatusBar,
+    QTableWidget, QTableWidgetItem
 )
 from PyQt6.QtCore import Qt
 from PyQt6.QtWebEngineWidgets import QWebEngineView
@@ -36,15 +37,22 @@ class MainWindow(QMainWindow):
         # Clustering Tab
         self.cluster_button = QPushButton("Perform Time-Based Clustering")
         self.cluster_button.clicked.connect(self.handle_clustering)
-        self.cluster_results = QTextEdit()
-        self.cluster_results.setReadOnly(True)
-        self.cluster_results.setMaximumHeight(200)
-        self.cluster_results.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-
+        self.cluster_table = QTableWidget()
+        # Number of columns: index, start, end, text, cluster_id
+        self.cluster_table.setColumnCount(5)
+        self.cluster_table.setHorizontalHeaderLabels(
+            ["Index", "Start", "End", "Text", "Cluster ID"])
+        self.cluster_table.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.cluster_table.setVerticalScrollMode(
+            QTableWidget.ScrollMode.ScrollPerPixel)
+        self.cluster_table.setHorizontalScrollMode(
+            QTableWidget.ScrollMode.ScrollPerPixel)
+        self.cluster_table.resizeColumnsToContents()
+        self.cluster_table.resizeRowsToContents()
         cluster_layout = QVBoxLayout()
+        cluster_layout.addWidget(self.cluster_table)
         cluster_layout.addWidget(self.cluster_button)
-        cluster_layout.addWidget(self.cluster_results)
         self.clustering_tab.setLayout(cluster_layout)
 
         # Gap threshold slider
@@ -52,7 +60,7 @@ class MainWindow(QMainWindow):
         threshold_layout = QHBoxLayout()
         threshold_label = QLabel("Time Gap Threshold (seconds):")
         self.threshold_slider = QSlider(Qt.Orientation.Horizontal)
-        self.threshold_slider.setRange(1, 20)  # Range: 1s to 20s
+        self.threshold_slider.setRange(1, 300)  # Range: 1s to 20s
         self.threshold_slider.setValue(5)  # Default value
         self.threshold_slider.valueChanged.connect(
             self.handle_threshold_change)
@@ -62,6 +70,7 @@ class MainWindow(QMainWindow):
         threshold_layout.addWidget(self.threshold_slider)
         threshold_layout.addWidget(self.threshold_value_label)
         threshold_container.setLayout(threshold_layout)
+
         # Insert below the clustering button
         cluster_layout.insertWidget(1, threshold_container)
 
@@ -124,7 +133,6 @@ class MainWindow(QMainWindow):
 
         # Set initial window size but allow resizing
         self.resize(800, 800)
-
         self.current_filepath = None
 
     def show_error(self, message):
@@ -175,7 +183,7 @@ class MainWindow(QMainWindow):
 
     def handle_clustering(self):
         """
-        Handles clustering and updates the clustering tab.
+        Handles clustering and updates the clustering tab with a table.
         """
         if self.parse_controller.current_df is None:
             self.status_bar.showMessage(
@@ -183,14 +191,26 @@ class MainWindow(QMainWindow):
             return
 
         clustered_df = self.parse_controller.cluster_by_time()
-        self.cluster_results.clear()
-        self.cluster_results.append("--- Time-Based Clustering Results ---\n")
-        preview = clustered_df.head(5).to_string(index=False)
-        self.cluster_results.append(preview)
+
+        # Clear previous results
+        self.cluster_table.setRowCount(0)
+
+        # Populate the table
+        for i, row in clustered_df.iterrows():
+            self.cluster_table.insertRow(i)
+            self.cluster_table.setItem(
+                i, 0, QTableWidgetItem(str(row["index"])))
+            self.cluster_table.setItem(
+                i, 1, QTableWidgetItem(f"{row['start_seconds']:.2f}"))
+            self.cluster_table.setItem(
+                i, 2, QTableWidgetItem(f"{row['end_seconds']:.2f}"))
+            self.cluster_table.setItem(i, 3, QTableWidgetItem(row["text"]))
+            self.cluster_table.setItem(
+                i, 4, QTableWidgetItem(str(row["cluster_id"])))
+
         unique_clusters = clustered_df["cluster_id"].nunique()
-        self.cluster_results.append(
-            f"\nTotal clusters found: {unique_clusters}")
-        self.status_bar.showMessage("Clustering completed", 5000)
+        self.status_bar.showMessage(
+            f"Clustering completed: {unique_clusters} clusters found", 5000)
 
     def handle_density(self):
         """
