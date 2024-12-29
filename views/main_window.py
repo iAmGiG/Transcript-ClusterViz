@@ -347,13 +347,14 @@ class MainWindow(QMainWindow):
 
         self.status_bar.showMessage("Exporting...")
 
-    def on_export_finished(self, message):
+    def on_chart_export_finished(self, message):
         """
-        Handle completion of the export thread.
+        Separate handler for chart export completion
         """
-        print(
-            f"DEBUG: Export thread finished with message: {message}")  # Debug print
+        print(f"DEBUG: Chart export thread finished with message: {message}")
         self.status_bar.showMessage(message)
+        if "failed" in message.lower():
+            self.show_error(message)
 
     def handle_export_chart(self):
         """
@@ -383,21 +384,30 @@ class MainWindow(QMainWindow):
             return
 
         try:
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(file_path) if os.path.dirname(
+                file_path) else '.', exist_ok=True)
+
             # Prepare density data and start export thread
             density_df = self.parse_controller.calculate_density()
-            self.export_thread = ChartExportWorker(
+
+            # Create a separate thread instance for chart export
+            self.chart_export_thread = ChartExportWorker(
                 density_df,
                 self.parse_controller.gap_threshold,
                 file_path,
                 file_type,
-                current_df=self.parse_controller.current_df  # Pass the current_df
+                current_df=self.parse_controller.current_df
             )
-            self.export_thread.finished.connect(self.on_export_finished)
-            self.export_thread.start()
+            self.chart_export_thread.finished.connect(
+                self.on_chart_export_finished)
+            self.chart_export_thread.start()
 
-            print("DEBUG: Export thread started.")
+            print(f"DEBUG: Chart export thread started for {file_path}")
             self.status_bar.showMessage("Exporting chart...")
 
         except Exception as e:
-            print(f"DEBUG: Export initiation failed: {str(e)}")
-            self.status_bar.showMessage(f"Failed to start export: {str(e)}")
+            error_msg = f"Failed to start export: {str(e)}"
+            print(f"DEBUG: {error_msg}")
+            self.status_bar.showMessage(error_msg)
+            self.show_error(error_msg)

@@ -60,15 +60,18 @@ class ChartExportWorker(QThread):
         self.gap_threshold = gap_threshold
         self.file_path = file_path
         self.file_type = file_type
-        self.current_df = current_df  # Add current_df to access cluster information
+        self.current_df = current_df
 
     def run(self):
         try:
+            print(f"DEBUG: Starting chart export to {self.file_path}")
+
             if not self.file_path:
                 raise ValueError("No file path provided for export.")
 
             # Add cluster information if available
             if self.current_df is not None and "cluster_id" in self.current_df.columns:
+                print("DEBUG: Adding cluster information to density data")
                 self.density_df = pd.merge(
                     self.density_df,
                     self.current_df[["bin_index", "cluster_id"]
@@ -76,68 +79,54 @@ class ChartExportWorker(QThread):
                     on="bin_index",
                     how="left"
                 )
-                color_discrete_map = {
-                    cluster_id: f"rgba({50 + cluster_id * 20 % 255}, {80 + cluster_id * 30 % 255}, {120 + cluster_id * 40 % 255}, 0.8)"
-                    for cluster_id in self.density_df["cluster_id"].unique() if pd.notnull(cluster_id)
-                }
-            else:
-                color_discrete_map = {}
 
-            # Create figure with full styling
+            # Create figure
+            print("DEBUG: Creating plotly figure")
             fig = px.bar(
                 self.density_df,
                 x="time_minutes",
                 y="words_per_bin",
-                color="cluster_id" if "cluster_id" in self.density_df.columns else None,
-                color_discrete_map=color_discrete_map,
-                text="words_per_bin",
                 labels={
                     "time_minutes": "Time (minutes)",
-                    "words_per_bin": "Words per Minute",
-                    "cluster_id": "Cluster ID"
+                    "words_per_bin": "Words per Minute"
                 },
                 title=f"Word Density Over Time (Gap Threshold: {self.gap_threshold}s)"
             )
 
             # Update layout
+            print("DEBUG: Updating figure layout")
             fig.update_layout(
                 template="plotly_dark",
                 plot_bgcolor="rgba(15,15,15,1)",
                 paper_bgcolor="rgba(15,15,15,1)",
                 font=dict(color="white"),
                 title_font_color="white",
-                height=600,
-                margin=dict(t=50, b=50, l=50, r=50)
+                height=600
             )
 
-            # Update axes
-            fig.update_xaxes(
-                showgrid=True,
-                gridwidth=1,
-                gridcolor="rgba(128,128,128,0.2)",
-                color="white"
-            )
-            fig.update_yaxes(
-                showgrid=True,
-                gridwidth=1,
-                gridcolor="rgba(128,128,128,0.2)",
-                color="white"
-            )
+            print(f"DEBUG: Attempting to write image to {self.file_path}")
 
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(self.file_path), exist_ok=True)
+            # Force static image rendering
+            import plotly.io as pio
+            pio.kaleido.scope.mathjax = None
 
-            # Export with explicit format and scale
+            # Export with explicit format
             fig.write_image(
                 self.file_path,
                 format=self.file_type,
-                scale=2,  # Higher resolution
-                engine="kaleido"  # Explicitly specify the rendering engine
+                engine='kaleido',
+                width=1200,
+                height=800,
+                scale=2
             )
 
+            print("DEBUG: Image write completed successfully")
             self.finished.emit(f"Export successful: {self.file_path}")
 
         except Exception as e:
             error_msg = f"Export failed: {str(e)}"
-            print(f"DEBUG: {error_msg}")  # Debug print
+            print(f"DEBUG: {error_msg}")
+            print(f"DEBUG: Exception type: {type(e)}")
+            import traceback
+            print(f"DEBUG: Traceback: {traceback.format_exc()}")
             self.finished.emit(error_msg)
