@@ -362,6 +362,14 @@ class MainWindow(QMainWindow):
         if "failed" in message.lower():
             self.show_error(message)
 
+    def on_export_finished(self, message):
+        """Handle completion of the export thread."""
+        print(f"DEBUG: Export thread finished with message: {message}")
+        self.status_bar.showMessage(message)
+
+        # Redraw the density chart if needed
+        self.handle_density()  # This will refresh the chart display
+
     def closeEvent(self, event):
         """Handle cleanup when closing the window"""
         # Clean up any running export thread
@@ -392,8 +400,7 @@ class MainWindow(QMainWindow):
                 pass
             delattr(self, 'chart_export_thread')
 
-        # Clean webview content temporarily
-        current_html = self.web_view.page().toHtml()
+        # Clear webview content - we'll skip saving/restoring since it's not necessary
         self.web_view.setHtml("")
 
         # Open file dialog
@@ -404,9 +411,6 @@ class MainWindow(QMainWindow):
             "",
             "PNG Files (*.png);;PDF Files (*.pdf)"
         )
-
-        # Restore webview content
-        self.web_view.setHtml(current_html)
 
         if not file_path:
             self.status_bar.showMessage("Export canceled.")
@@ -436,6 +440,12 @@ class MainWindow(QMainWindow):
 
             print(f"DEBUG: Chart export thread started for {file_path}")
             self.status_bar.showMessage("Starting chart export...")
+
+        except Exception as e:
+            error_msg = f"Failed to start export: {str(e)}"
+            print(f"DEBUG: {error_msg}")
+            self.status_bar.showMessage(error_msg)
+            self.show_error(error_msg)
 
         except Exception as e:
             error_msg = f"Failed to start export: {str(e)}"
