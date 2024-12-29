@@ -380,17 +380,25 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage("Unsupported file format.")
             return
 
-        # Start export in a separate thread
-        density_df = self.parse_controller.calculate_density()
-        self.export_thread = ChartExportWorker(
-            density_df, self.parse_controller.gap_threshold, file_path, file_type)
-        self.export_thread.finished.connect(self.on_export_finished)
-        self.export_thread.start()
+        try:
+            # Prepare density data and start export thread
+            density_df = self.parse_controller.calculate_density()
+            self.export_thread = ChartExportWorker(
+                density_df, self.parse_controller.gap_threshold, file_path, file_type)
+            self.export_thread.finished.connect(self.on_export_finished)
+            self.export_thread.start()
 
-        self.status_bar.showMessage("Exporting chart...")
+            print("DEBUG: Export thread started.")  # Debug print
+            self.status_bar.showMessage("Exporting chart...")
+
+        except Exception as e:
+            print(f"DEBUG: Export initiation failed: {str(e)}")  # Debug print
+            self.status_bar.showMessage(f"Failed to start export: {str(e)}")
 
     def on_export_finished(self, message):
         """
         Handle completion of the chart export thread.
         """
+        print(
+            f"DEBUG: Export thread finished with message: {message}")  # Debug print
         self.status_bar.showMessage(message)

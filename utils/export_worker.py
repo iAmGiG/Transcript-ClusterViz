@@ -1,3 +1,4 @@
+import os
 from PyQt6.QtCore import QThread, pyqtSignal
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -62,6 +63,10 @@ class ChartExportWorker(QThread):
 
     def run(self):
         try:
+            # Validate file path
+            if not self.file_path:
+                raise ValueError("No file path provided for export.")
+
             # Generate density chart
             fig = px.bar(
                 self.density_df,
@@ -72,8 +77,15 @@ class ChartExportWorker(QThread):
                 title=f"Word Density Over Time (Gap Threshold: {self.gap_threshold}s)",
             )
 
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(self.file_path), exist_ok=True)
+
             # Save chart
             fig.write_image(self.file_path, format=self.file_type)
             self.finished.emit(f"Export successful: {self.file_path}")
+
         except Exception as e:
-            self.finished.emit(f"Export failed: {str(e)}")
+            # Catch and report errors
+            error_message = f"Export failed: {str(e)}"
+            print(f"DEBUG: {error_message}")  # Debug print for terminal
+            self.finished.emit(error_message)
