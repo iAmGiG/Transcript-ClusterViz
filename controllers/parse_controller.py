@@ -52,12 +52,17 @@ class ParseController:
 
         df["cluster_id"] = cluster_ids
         df.drop(columns=["prev_end", "gap"], inplace=True)
+
+        print("DEBUG: Clustering completed. Cluster IDs assigned.")
+        # Debug print
+        print(df[["start_seconds", "end_seconds", "cluster_id"]].head())
+
         return df
 
     def calculate_density(self, df: pd.DataFrame = None):
         """
         Groups subtitles by time bins (in seconds) and computes total word_count per bin.
-        Returns a DataFrame with columns ['time_bin', 'words_per_bin'].
+        Returns a DataFrame with columns ['bin_index', 'words_per_bin', 'time_minutes'].
         """
         if df is None:
             df = self.current_df
@@ -73,6 +78,9 @@ class ParseController:
         grouped = df.groupby("bin_index")["word_count"].sum().reset_index()
         grouped.rename(columns={"word_count": "words_per_bin"}, inplace=True)
 
+        # Add time in minutes for the x-axis in charts
+        grouped["time_minutes"] = grouped["bin_index"] * (self.bin_size / 60)
+
         # Debug print
         print(f"DEBUG: Density calculation result shape: {grouped.shape}")
         print("DEBUG: First few rows of density data:")  # Debug print
@@ -80,32 +88,31 @@ class ParseController:
 
         return grouped
 
+
     def plot_density_chart(self, density_df: pd.DataFrame):
         """
-        Creates a Plotly figure for words-per-bin vs. time_bin, returning an HTML string.
+        Creates a Plotly figure for words-per-bin vs. time_bin, with cluster visualization.
         """
-        # Convert bin_index to minutes for better readability
-        density_df['time_minutes'] = density_df['bin_index'] * \
-            (self.bin_size / 60)
-
-        # Create figure
+        # Create figure with simpler configuration first
         fig = px.bar(
             density_df,
             x='time_minutes',
             y='words_per_bin',
             text='words_per_bin',  # Adds text to bars
             labels={
-                'time_minutes': 'Time (minutes)', 'words_per_bin': 'Words per Minute'},
+                'time_minutes': 'Time (minutes)',
+                'words_per_bin': 'Words per Minute',
+            },
             title='Word Density Over Time'
         )
 
-        # Update layout with dark theme
+        # Update layout
         fig.update_layout(
             template='plotly_dark',
-            plot_bgcolor='rgba(15,15,15,1)',  # Darker background
-            paper_bgcolor='rgba(15,15,15,1)',  # Darker background
-            font=dict(color='white'),  # White text
-            title_font_color='white',  # White title
+            plot_bgcolor='rgba(15,15,15,1)',
+            paper_bgcolor='rgba(15,15,15,1)',
+            font=dict(color='white'),
+            title_font_color='white',
             height=400,
             margin=dict(t=50, b=50, l=50, r=50)
         )
@@ -115,53 +122,20 @@ class ParseController:
             showgrid=True,
             gridwidth=1,
             gridcolor='rgba(128,128,128,0.2)',
-            color='white'  # Axis labels in white
+            color='white'
         )
         fig.update_yaxes(
             showgrid=True,
             gridwidth=1,
             gridcolor='rgba(128,128,128,0.2)',
-            color='white'  # Axis labels in white
+            color='white'
         )
-
-        # Update bar colors
-        fig.update_traces(marker_color='rgb(99,110,250)')  # A nice blue color
 
         return fig.to_html(
             full_html=False,
             include_plotlyjs='cdn',
             config={
                 'responsive': True,
-                'displayModeBar': False  # Hide the modebar
+                'displayModeBar': False
             }
         )
-
-    def handle_density(self):
-        """
-        Calculate and plot the words-per-bin chart in the embedded QWebEngineView.
-        """
-        if self.parse_controller.current_df is None:
-            self.text_display.append(
-                "No data to plot. Please load an SRT file first.")
-            return
-
-        print("DEBUG: Starting density chart handling")  # Debug print
-
-        try:
-            # Calculate density
-            density_df = self.parse_controller.calculate_density()
-            print("DEBUG: Density calculation completed")  # Debug print
-
-            # Create Plotly figure HTML
-            chart_html = self.parse_controller.plot_density_chart(density_df)
-            print("DEBUG: Chart HTML generated")  # Debug print
-
-            # Load the HTML into the QWebEngineView
-            self.web_view.setHtml(chart_html)
-            print("DEBUG: HTML set to QWebEngineView")  # Debug print
-
-            self.text_display.append("\n--- Density Chart Updated ---\n")
-        except Exception as e:
-            print(f"DEBUG: Error occurred: {str(e)}")  # Debug print
-            self.text_display.append(
-                f"\nError creating density chart: {str(e)}\n")

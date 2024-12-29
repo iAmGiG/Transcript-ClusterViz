@@ -1,13 +1,15 @@
 # transcript_clusterviz/views/main_window.py
 
 import os
-from PyQt6.QtWidgets import (
-    QMainWindow, QTextEdit, QVBoxLayout, QWidget,
-    QPushButton, QApplication, QFileDialog, QHBoxLayout,
-    QSizePolicy, QSlider, QLabel, QMessageBox, QTabWidget, QStatusBar
-)
 from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (
+    QMainWindow, QVBoxLayout, QWidget,
+    QPushButton, QFileDialog, QHBoxLayout,
+    QSizePolicy, QSlider, QLabel, QMessageBox, QTabWidget, QStatusBar,
+    QTableWidget, QTableWidgetItem
+)
 from PyQt6.QtWebEngineWidgets import QWebEngineView
+from utils.export_worker import ExportWorker, ChartExportWorker
 from controllers.parse_controller import ParseController
 
 
@@ -36,16 +38,47 @@ class MainWindow(QMainWindow):
         # Clustering Tab
         self.cluster_button = QPushButton("Perform Time-Based Clustering")
         self.cluster_button.clicked.connect(self.handle_clustering)
-        self.cluster_results = QTextEdit()
-        self.cluster_results.setReadOnly(True)
-        self.cluster_results.setMaximumHeight(200)
-        self.cluster_results.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.cluster_table = QTableWidget()
+        # Number of columns: index, start, end, text, cluster_id
+        self.cluster_table.setColumnCount(5)
+        self.cluster_table.setHorizontalHeaderLabels(
+            ["Index", "Start", "End", "Text", "Cluster ID"])
+        self.cluster_table.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.cluster_table.setVerticalScrollMode(
+            QTableWidget.ScrollMode.ScrollPerPixel)
+        self.cluster_table.setHorizontalScrollMode(
+            QTableWidget.ScrollMode.ScrollPerPixel)
+        self.cluster_table.resizeColumnsToContents()
+        self.cluster_table.resizeRowsToContents()
+        self.export_clusters_button = QPushButton("Export Clusters")
+        self.export_clusters_button.clicked.connect(
+            self.handle_export_clusters)
 
         cluster_layout = QVBoxLayout()
+        cluster_layout.addWidget(self.cluster_table)
         cluster_layout.addWidget(self.cluster_button)
-        cluster_layout.addWidget(self.cluster_results)
+        cluster_layout.addWidget(self.export_clusters_button)
         self.clustering_tab.setLayout(cluster_layout)
+
+        # Gap threshold slider
+        threshold_container = QWidget()
+        threshold_layout = QHBoxLayout()
+        threshold_label = QLabel("Time Gap Threshold (seconds):")
+        self.threshold_slider = QSlider(Qt.Orientation.Horizontal)
+        self.threshold_slider.setRange(1, 300)  # Range: 1s to 20s
+        self.threshold_slider.setValue(5)  # Default value
+        self.threshold_slider.valueChanged.connect(
+            self.handle_threshold_change)
+        self.threshold_value_label = QLabel("5")
+
+        threshold_layout.addWidget(threshold_label)
+        threshold_layout.addWidget(self.threshold_slider)
+        threshold_layout.addWidget(self.threshold_value_label)
+        threshold_container.setLayout(threshold_layout)
+
+        # Insert below the clustering button
+        cluster_layout.insertWidget(1, threshold_container)
 
         # Density Tab
         density_controls = QWidget()
@@ -53,8 +86,11 @@ class MainWindow(QMainWindow):
 
         # Add density button
         self.density_button = QPushButton("Plot Density Chart")
+        self.export_chart_button = QPushButton("Export Chart")
+        self.export_chart_button.clicked.connect(self.handle_export_chart)
         self.density_button.clicked.connect(self.handle_density)
         density_controls_layout.addWidget(self.density_button)
+        density_controls_layout.addWidget(self.export_chart_button)
 
         # Add bin size slider
         slider_container = QWidget()
@@ -106,7 +142,6 @@ class MainWindow(QMainWindow):
 
         # Set initial window size but allow resizing
         self.resize(800, 800)
-
         self.current_filepath = None
 
     def show_error(self, message):
@@ -143,21 +178,37 @@ class MainWindow(QMainWindow):
                     self.text_display.append("Not an .srt file: " + filepath)
 
     def handle_srt_file(self, filepath):
+        """
+        Handles loading an SRT file and displaying the preview in the clustering tab.
+        """
         if not os.path.exists(filepath):
             self.status_bar.showMessage(f"File not found: {filepath}")
             return
 
         self.current_filepath = filepath
         df = self.parse_controller.parse_srt_file(filepath)
-        self.cluster_results.clear()
-        self.cluster_results.append(f"Loaded SRT file: {filepath}\n")
-        preview = df.head(5).to_string(index=False)
-        self.cluster_results.append(preview)
+
+        # Clear previous table data
+        self.cluster_table.setRowCount(0)
+
+        # Display first 5 rows in the table as a preview
+        for i, row in df.head(5).iterrows():
+            self.cluster_table.insertRow(i)
+            self.cluster_table.setItem(
+                i, 0, QTableWidgetItem(str(row["index"])))
+            self.cluster_table.setItem(
+                i, 1, QTableWidgetItem(f"{row['start_seconds']:.2f}"))
+            self.cluster_table.setItem(
+                i, 2, QTableWidgetItem(f"{row['end_seconds']:.2f}"))
+            self.cluster_table.setItem(i, 3, QTableWidgetItem(row["text"]))
+            # Placeholder for cluster_id
+            self.cluster_table.setItem(i, 4, QTableWidgetItem("N/A"))
+
         self.status_bar.showMessage(f"Loaded: {filepath}", 5000)
 
     def handle_clustering(self):
         """
-        Handles clustering and updates the clustering tab.
+        Handles clustering and updates the clustering tab with a table.
         """
         if self.parse_controller.current_df is None:
             self.status_bar.showMessage(
@@ -165,14 +216,26 @@ class MainWindow(QMainWindow):
             return
 
         clustered_df = self.parse_controller.cluster_by_time()
-        self.cluster_results.clear()
-        self.cluster_results.append("--- Time-Based Clustering Results ---\n")
-        preview = clustered_df.head(5).to_string(index=False)
-        self.cluster_results.append(preview)
+
+        # Clear previous results
+        self.cluster_table.setRowCount(0)
+
+        # Populate the table
+        for i, row in clustered_df.iterrows():
+            self.cluster_table.insertRow(i)
+            self.cluster_table.setItem(
+                i, 0, QTableWidgetItem(str(row["index"])))
+            self.cluster_table.setItem(
+                i, 1, QTableWidgetItem(f"{row['start_seconds']:.2f}"))
+            self.cluster_table.setItem(
+                i, 2, QTableWidgetItem(f"{row['end_seconds']:.2f}"))
+            self.cluster_table.setItem(i, 3, QTableWidgetItem(row["text"]))
+            self.cluster_table.setItem(
+                i, 4, QTableWidgetItem(str(row["cluster_id"])))
+
         unique_clusters = clustered_df["cluster_id"].nunique()
-        self.cluster_results.append(
-            f"\nTotal clusters found: {unique_clusters}")
-        self.status_bar.showMessage("Clustering completed", 5000)
+        self.status_bar.showMessage(
+            f"Clustering completed: {unique_clusters} clusters found", 5000)
 
     def handle_density(self):
         """
@@ -183,24 +246,22 @@ class MainWindow(QMainWindow):
                 "No data to plot. Please load an SRT file first.")
             return
 
-        print("DEBUG: Starting density chart handling")
-
         try:
+            # Clear existing web view content
+            self.web_view.setHtml("")
+
             # Calculate density
             density_df = self.parse_controller.calculate_density()
-            print("DEBUG: Density calculation completed")
 
-            # Create Plotly figure HTML
+            # Generate new chart
             chart_html = self.parse_controller.plot_density_chart(density_df)
-            print("DEBUG: Chart HTML generated")
 
-            # Load the HTML into the QWebEngineView
+            # Update web view
             self.web_view.setHtml(chart_html)
-            print("DEBUG: HTML set to QWebEngineView")
-
             self.status_bar.showMessage("Density chart updated", 5000)
+
         except Exception as e:
-            print(f"DEBUG: Error occurred: {str(e)}")
+            print(f"DEBUG: Error in density plotting: {str(e)}")
             self.status_bar.showMessage(
                 f"Error creating density chart: {str(e)}")
 
@@ -210,7 +271,183 @@ class MainWindow(QMainWindow):
         """
         self.bin_size_value_label.setText(str(value))  # Update the label
         self.parse_controller.bin_size = value
-        
+
         if self.parse_controller.current_df is not None and self.tabs.currentWidget() == self.density_tab:
             self.handle_density()  # Recalculate density with new bin size
-            self.status_bar.showMessage(f"Updated bin size to {value} seconds", 3000)
+            self.status_bar.showMessage(
+                f"Updated bin size to {value} seconds", 3000)
+
+    def handle_threshold_change(self, value):
+        """
+        Updates the gap_threshold in ParseController and refreshes clustering results.
+        """
+        self.threshold_value_label.setText(str(value))  # Update label
+        self.parse_controller.gap_threshold = value  # Update threshold
+
+        # Re-run clustering if data is loaded
+        if self.parse_controller.current_df is not None:
+            clustered_df = self.parse_controller.cluster_by_time()
+            self.parse_controller.current_df = clustered_df  # Ensure `current_df` is updated
+
+            # Clear and repopulate the table with updated clustering
+            self.cluster_table.setRowCount(0)
+            for i, row in clustered_df.iterrows():
+                self.cluster_table.insertRow(i)
+                self.cluster_table.setItem(
+                    i, 0, QTableWidgetItem(str(row["index"])))
+                self.cluster_table.setItem(
+                    i, 1, QTableWidgetItem(f"{row['start_seconds']:.2f}"))
+                self.cluster_table.setItem(
+                    i, 2, QTableWidgetItem(f"{row['end_seconds']:.2f}"))
+                self.cluster_table.setItem(i, 3, QTableWidgetItem(row["text"]))
+                self.cluster_table.setItem(
+                    i, 4, QTableWidgetItem(str(row["cluster_id"])))
+
+            unique_clusters = clustered_df["cluster_id"].nunique()
+            self.status_bar.showMessage(
+                f"Updated clustering with gap threshold: {value}s", 3000)
+
+    def handle_export_clusters(self):
+        """
+        Exports clustering results in various formats using threading.
+        """
+        if self.parse_controller.current_df is None or "cluster_id" not in self.parse_controller.current_df.columns:
+            self.status_bar.showMessage(
+                "No clustering data available to export.")
+            return
+
+        # Open file dialog to select save location and file type
+        file_dialog = QFileDialog()
+        file_path, _ = file_dialog.getSaveFileName(
+            self,
+            "Save Clusters As",
+            "",
+            "PNG Files (*.png);;PDF Files (*.pdf);;CSV Files (*.csv);;Excel Files (*.xlsx)"
+        )
+
+        if not file_path:
+            self.status_bar.showMessage("Export canceled.")
+            return
+
+        # Determine file type
+        file_type = file_path.split(".")[-1].lower()
+        if file_type not in ["png", "pdf", "csv", "xlsx"]:
+            self.status_bar.showMessage("Unsupported file format.")
+            return
+
+        # Prepare data and metadata
+        df = self.parse_controller.current_df[[
+            "index", "start_seconds", "end_seconds", "text", "cluster_id"]]
+        gap_threshold = self.parse_controller.gap_threshold
+        num_clusters = df["cluster_id"].nunique()
+
+        # Start export in a separate thread
+        self.export_thread = ExportWorker(
+            df, file_path, file_type, gap_threshold, num_clusters)
+        self.export_thread.finished.connect(self.on_export_finished)
+        self.export_thread.start()
+
+        self.status_bar.showMessage("Exporting...")
+
+    def on_chart_export_finished(self, message):
+        """Handle completion of chart export"""
+        print(f"DEBUG: Chart export finished - {message}")
+        self.status_bar.showMessage(message)
+
+        if hasattr(self, 'chart_export_thread'):
+            self.chart_export_thread.cleanup()
+            self.chart_export_thread.deleteLater()
+            delattr(self, 'chart_export_thread')
+
+        if "failed" in message.lower() or "timed out" in message.lower():
+            self.show_error(message)
+
+    def on_export_finished(self, message):
+        """Handle completion of the export thread."""
+        print(f"DEBUG: Export thread finished with message: {message}")
+        self.status_bar.showMessage(message)
+
+        # Redraw the density chart if needed
+        self.handle_density()  # This will refresh the chart display
+
+    def closeEvent(self, event):
+        """Handle cleanup when closing the window"""
+        # Clean up any running export thread
+        if hasattr(self, 'chart_export_thread'):
+            self.chart_export_thread.cleanup()
+            self.chart_export_thread.deleteLater()
+        event.accept()
+
+    def handle_export_chart(self):
+        """
+        Exports the density chart as an image or PDF using Plotly.
+        """
+        if self.parse_controller.current_df is None:
+            self.status_bar.showMessage("No data available to export.")
+            return
+
+        # Handle any existing export thread
+        if hasattr(self, 'chart_export_thread'):
+            if self.chart_export_thread.isRunning():
+                msg = "Previous export still in progress. Please wait or restart the application."
+                self.show_error(msg)
+                return
+            else:
+                # Clean up previous thread
+                self.chart_export_thread.cleanup()
+                self.chart_export_thread.deleteLater()
+                delattr(self, 'chart_export_thread')
+
+        # Open file dialog
+        file_dialog = QFileDialog()
+        file_path, _ = file_dialog.getSaveFileName(
+            self,
+            "Save Density Chart As",
+            "",
+            "PNG Files (*.png);;PDF Files (*.pdf)"
+        )
+
+        if not file_path:
+            self.status_bar.showMessage("Export canceled.")
+            return
+
+        file_type = file_path.split(".")[-1].lower()
+        if file_type not in ["png", "pdf"]:
+            self.status_bar.showMessage("Unsupported file format.")
+            return
+
+        try:
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(file_path) if os.path.dirname(
+                file_path) else '.', exist_ok=True)
+
+            density_df = self.parse_controller.calculate_density()
+
+            # Create new thread with 30 second timeout
+            self.chart_export_thread = ChartExportWorker(
+                density_df,
+                self.parse_controller.gap_threshold,
+                file_path,
+                file_type,
+                current_df=self.parse_controller.current_df,
+                timeout_seconds=30
+            )
+
+            self.chart_export_thread.progress.connect(self.on_export_progress)
+            self.chart_export_thread.finished.connect(
+                self.on_chart_export_finished)
+            self.chart_export_thread.start()
+
+            print(f"DEBUG: Chart export thread started for {file_path}")
+            self.status_bar.showMessage("Starting chart export...")
+
+        except Exception as e:
+            error_msg = f"Failed to start export: {str(e)}"
+            print(f"DEBUG: {error_msg}")
+            self.status_bar.showMessage(error_msg)
+            self.show_error(error_msg)
+
+    def on_export_progress(self, message):
+        """Handle progress updates from the export thread"""
+        print(f"DEBUG: Export progress - {message}")
+        self.status_bar.showMessage(message)
