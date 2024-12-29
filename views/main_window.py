@@ -351,6 +351,8 @@ class MainWindow(QMainWindow):
         """
         Handle completion of the export thread.
         """
+        print(
+            f"DEBUG: Export thread finished with message: {message}")  # Debug print
         self.status_bar.showMessage(message)
 
     def handle_export_chart(self):
@@ -384,21 +386,18 @@ class MainWindow(QMainWindow):
             # Prepare density data and start export thread
             density_df = self.parse_controller.calculate_density()
             self.export_thread = ChartExportWorker(
-                density_df, self.parse_controller.gap_threshold, file_path, file_type)
+                density_df,
+                self.parse_controller.gap_threshold,
+                file_path,
+                file_type,
+                current_df=self.parse_controller.current_df  # Pass the current_df
+            )
             self.export_thread.finished.connect(self.on_export_finished)
             self.export_thread.start()
 
-            print("DEBUG: Export thread started.")  # Debug print
+            print("DEBUG: Export thread started.")
             self.status_bar.showMessage("Exporting chart...")
 
         except Exception as e:
-            print(f"DEBUG: Export initiation failed: {str(e)}")  # Debug print
+            print(f"DEBUG: Export initiation failed: {str(e)}")
             self.status_bar.showMessage(f"Failed to start export: {str(e)}")
-
-    def on_export_finished(self, message):
-        """
-        Handle completion of the chart export thread.
-        """
-        print(
-            f"DEBUG: Export thread finished with message: {message}")  # Debug print
-        self.status_bar.showMessage(message)
