@@ -77,3 +77,7 @@ Contributions are welcome! For ideas, bug reports, or feature requests, please o
 ## **License**
 
 This project is licensed under the MIT License.
+
+## References
+
+- [Install-all-py-packages-in-one-line](https://medium.com/@abhishekdas69597/python-requirements-txt-how-to-manage-dependencies-in-python-project-fccd9d6f4062#:~:text=txt%20%3A%20How%20to%20manage%20dependencies%20in%20Python%20Project,-Abhishek%20Das&text=The%20requirements.,essential%20for%20the%20application's%20functionality.)
