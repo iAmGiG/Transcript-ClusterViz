@@ -59,7 +59,6 @@ class ChartExportWorker(QThread):
 
     def __init__(self, density_df, gap_threshold, file_path, file_type, current_df=None, timeout_seconds=30):
         super().__init__()
-        # Create deep copies to isolate data
         self.density_df = density_df.copy(deep=True)
         self.gap_threshold = gap_threshold
         self.file_path = file_path
@@ -75,64 +74,66 @@ class ChartExportWorker(QThread):
         self.timer.timeout.connect(self.handle_timeout)
 
     def handle_timeout(self):
-        """Handle case where export takes too long"""
         if self.is_running:
             self.is_running = False
             self.finished.emit("Export timed out - operation cancelled")
-            self.terminate()  # Force thread termination
+            self.terminate()
 
     def run(self):
         try:
-            # Start timeout timer
-            # Convert to milliseconds
             self.timer.start(self.timeout_seconds * 1000)
 
             self.progress.emit("Starting export...")
 
-            # Create figure - simplified version with minimal dependencies
-            import plotly.graph_objects as go
-            fig = go.Figure()
+            # Use matplotlib instead of plotly
+            import matplotlib.pyplot as plt
+            import matplotlib
+            matplotlib.use('Agg')  # Non-interactive backend
 
-            # Add trace directly using graph_objects for more control
-            fig.add_trace(go.Bar(
-                x=self.density_df['time_minutes'],
-                y=self.density_df['words_per_bin'],
-                name='Word Density'
-            ))
+            # Create figure and axis
+            fig, ax = plt.subplots(figsize=(12, 8))
 
-            # Update layout with minimal styling
-            fig.update_layout(
-                title=f'Word Density Over Time (Gap Threshold: {self.gap_threshold}s)',
-                xaxis_title='Time (minutes)',
-                yaxis_title='Words per Minute',
-                template='plotly_dark',
-                width=1200,
-                height=800
-            )
+            # Create bar plot
+            ax.bar(self.density_df['time_minutes'],
+                   self.density_df['words_per_bin'],
+                   color='steelblue')
+
+            # Set labels and title
+            ax.set_xlabel('Time (minutes)')
+            ax.set_ylabel('Words per Minute')
+            ax.set_title(
+                f'Word Density Over Time\nGap Threshold: {self.gap_threshold}s')
+
+            # Style the plot
+            ax.grid(True, alpha=0.3)
+            fig.set_facecolor('#1f1f1f')
+            ax.set_facecolor('#1f1f1f')
+            ax.tick_params(colors='white')
+            ax.xaxis.label.set_color('white')
+            ax.yaxis.label.set_color('white')
+            ax.title.set_color('white')
+            for spine in ax.spines.values():
+                spine.set_color('white')
 
             self.progress.emit("Writing image...")
 
-            # Use lower-level pio functionality
-            import plotly.io as pio
-            pio.kaleido.scope.mathjax = None
+            # Save the plot
+            plt.savefig(
+                self.file_path,
+                format=self.file_type,
+                bbox_inches='tight',
+                facecolor=fig.get_facecolor(),
+                edgecolor='none',
+                pad_inches=0.1,
+                dpi=300
+            )
 
-            # Write image with explicit timeout
-            with open(self.file_path, 'wb') as f:
-                img_bytes = pio.to_image(
-                    fig,
-                    format=self.file_type,
-                    scale=2,
-                    validate=False  # Skip validation for speed
-                )
-                f.write(img_bytes)
-
-            # Stop timeout timer
+            # Cleanup
+            plt.close(fig)
             self.timer.stop()
 
-            if self.is_running:  # Check if we haven't been cancelled
+            if self.is_running:
                 self.progress.emit("Cleanup...")
-                fig.data = []
-                fig = None
                 self.density_df = None
                 self.current_df = None
 
@@ -155,7 +156,7 @@ class ChartExportWorker(QThread):
         """External cleanup method"""
         self.timer.stop()
         self.is_running = False
-        self.wait(1000)  # Wait up to 1 second for natural completion
+        self.wait(1000)
         if self.isRunning():
             self.terminate()
-            self.wait()  # Wait for termination to complete
+            self.wait()
