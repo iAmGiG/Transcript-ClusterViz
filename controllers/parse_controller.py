@@ -62,7 +62,7 @@ class ParseController:
     def calculate_density(self, df: pd.DataFrame = None):
         """
         Groups subtitles by time bins (in seconds) and computes total word_count per bin.
-        Returns a DataFrame with columns ['time_bin', 'words_per_bin'].
+        Returns a DataFrame with columns ['bin_index', 'words_per_bin', 'time_minutes'].
         """
         if df is None:
             df = self.current_df
@@ -78,6 +78,9 @@ class ParseController:
         grouped = df.groupby("bin_index")["word_count"].sum().reset_index()
         grouped.rename(columns={"word_count": "words_per_bin"}, inplace=True)
 
+        # Add time in minutes for the x-axis in charts
+        grouped["time_minutes"] = grouped["bin_index"] * (self.bin_size / 60)
+
         # Debug print
         print(f"DEBUG: Density calculation result shape: {grouped.shape}")
         print("DEBUG: First few rows of density data:")  # Debug print
@@ -85,44 +88,22 @@ class ParseController:
 
         return grouped
 
+
     def plot_density_chart(self, density_df: pd.DataFrame):
         """
         Creates a Plotly figure for words-per-bin vs. time_bin, with cluster visualization.
         """
-        # Convert bin_index to minutes for better readability
-        density_df['time_minutes'] = density_df['bin_index'] * \
-            (self.bin_size / 60)
-
-        # Add cluster information
-        if self.current_df is not None and "cluster_id" in self.current_df.columns:
-            # Map clusters to density data for coloring
-            density_df = pd.merge(
-                density_df,
-                self.current_df[["bin_index", "cluster_id"]].drop_duplicates(),
-                on="bin_index",
-                how="left"
-            )
-            color_discrete_map = {
-                cluster_id: f"rgba({50 + cluster_id * 20 % 255}, {80 + cluster_id * 30 % 255}, {120 + cluster_id * 40 % 255}, 0.8)"
-                for cluster_id in density_df["cluster_id"].unique() if pd.notnull(cluster_id)
-            }
-        else:
-            color_discrete_map = {}
-
-        # Create figure
+        # Create figure with simpler configuration first
         fig = px.bar(
             density_df,
             x='time_minutes',
             y='words_per_bin',
-            color='cluster_id',
-            color_discrete_map=color_discrete_map,
             text='words_per_bin',  # Adds text to bars
             labels={
                 'time_minutes': 'Time (minutes)',
                 'words_per_bin': 'Words per Minute',
-                'cluster_id': 'Cluster ID'
             },
-            title='Word Density Over Time with Clustering'
+            title='Word Density Over Time'
         )
 
         # Update layout

@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from utils.export_worker import ExportWorker
+from utils.export_worker import ExportWorker, ChartExportWorker
 from controllers.parse_controller import ParseController
 
 
@@ -86,8 +86,11 @@ class MainWindow(QMainWindow):
 
         # Add density button
         self.density_button = QPushButton("Plot Density Chart")
+        self.export_chart_button = QPushButton("Export Chart")
+        self.export_chart_button.clicked.connect(self.handle_export_chart)
         self.density_button.clicked.connect(self.handle_density)
         density_controls_layout.addWidget(self.density_button)
+        density_controls_layout.addWidget(self.export_chart_button)
 
         # Add bin size slider
         slider_container = QWidget()
@@ -243,20 +246,22 @@ class MainWindow(QMainWindow):
                 "No data to plot. Please load an SRT file first.")
             return
 
-        # Ensure clustering is updated before plotting
-        if "cluster_id" not in self.parse_controller.current_df.columns:
-            print("DEBUG: Recalculating clustering as 'cluster_id' is missing.")
-            self.parse_controller.current_df = self.parse_controller.cluster_by_time()
-
         try:
-            # Calculate density and plot
+            # Clear existing web view content
+            self.web_view.setHtml("")
+
+            # Calculate density
             density_df = self.parse_controller.calculate_density()
+
+            # Generate new chart
             chart_html = self.parse_controller.plot_density_chart(density_df)
+
+            # Update web view
             self.web_view.setHtml(chart_html)
-            self.status_bar.showMessage(
-                "Density chart updated with clustering", 5000)
+            self.status_bar.showMessage("Density chart updated", 5000)
+
         except Exception as e:
-            print(f"DEBUG: Error occurred: {str(e)}")
+            print(f"DEBUG: Error in density plotting: {str(e)}")
             self.status_bar.showMessage(
                 f"Error creating density chart: {str(e)}")
 
@@ -344,8 +349,105 @@ class MainWindow(QMainWindow):
 
         self.status_bar.showMessage("Exporting...")
 
+    def on_chart_export_finished(self, message):
+        """Handle completion of chart export"""
+        print(f"DEBUG: Chart export finished - {message}")
+        self.status_bar.showMessage(message)
+
+        if hasattr(self, 'chart_export_thread'):
+            self.chart_export_thread.cleanup()
+            self.chart_export_thread.deleteLater()
+            delattr(self, 'chart_export_thread')
+
+        if "failed" in message.lower() or "timed out" in message.lower():
+            self.show_error(message)
+
     def on_export_finished(self, message):
+        """Handle completion of the export thread."""
+        print(f"DEBUG: Export thread finished with message: {message}")
+        self.status_bar.showMessage(message)
+
+        # Redraw the density chart if needed
+        self.handle_density()  # This will refresh the chart display
+
+    def closeEvent(self, event):
+        """Handle cleanup when closing the window"""
+        # Clean up any running export thread
+        if hasattr(self, 'chart_export_thread'):
+            self.chart_export_thread.cleanup()
+            self.chart_export_thread.deleteLater()
+        event.accept()
+
+    def handle_export_chart(self):
         """
-        Handle completion of the export thread.
+        Exports the density chart as an image or PDF using Plotly.
         """
+        if self.parse_controller.current_df is None:
+            self.status_bar.showMessage("No data available to export.")
+            return
+
+        # Handle any existing export thread
+        if hasattr(self, 'chart_export_thread'):
+            if self.chart_export_thread.isRunning():
+                msg = "Previous export still in progress. Please wait or restart the application."
+                self.show_error(msg)
+                return
+            else:
+                # Clean up previous thread
+                self.chart_export_thread.cleanup()
+                self.chart_export_thread.deleteLater()
+                delattr(self, 'chart_export_thread')
+
+        # Open file dialog
+        file_dialog = QFileDialog()
+        file_path, _ = file_dialog.getSaveFileName(
+            self,
+            "Save Density Chart As",
+            "",
+            "PNG Files (*.png);;PDF Files (*.pdf)"
+        )
+
+        if not file_path:
+            self.status_bar.showMessage("Export canceled.")
+            return
+
+        file_type = file_path.split(".")[-1].lower()
+        if file_type not in ["png", "pdf"]:
+            self.status_bar.showMessage("Unsupported file format.")
+            return
+
+        try:
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(file_path) if os.path.dirname(
+                file_path) else '.', exist_ok=True)
+
+            density_df = self.parse_controller.calculate_density()
+
+            # Create new thread with 30 second timeout
+            self.chart_export_thread = ChartExportWorker(
+                density_df,
+                self.parse_controller.gap_threshold,
+                file_path,
+                file_type,
+                current_df=self.parse_controller.current_df,
+                timeout_seconds=30
+            )
+
+            self.chart_export_thread.progress.connect(self.on_export_progress)
+            self.chart_export_thread.finished.connect(
+                self.on_chart_export_finished)
+            self.chart_export_thread.start()
+
+            print(f"DEBUG: Chart export thread started for {file_path}")
+            self.status_bar.showMessage("Starting chart export...")
+
+        except Exception as e:
+            error_msg = f"Failed to start export: {str(e)}"
+            print(f"DEBUG: {error_msg}")
+            self.status_bar.showMessage(error_msg)
+            self.show_error(error_msg)
+
+    def on_export_progress(self, message):
+        """Handle progress updates from the export thread"""
+        print(f"DEBUG: Export progress - {message}")
         self.status_bar.showMessage(message)
