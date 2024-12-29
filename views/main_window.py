@@ -370,7 +370,8 @@ class MainWindow(QMainWindow):
             self,
             "Save Density Chart As",
             "",
-            "PNG Files (*.png);;JPEG Files (*.jpeg);;PDF Files (*.pdf)"
+            # Removed JPEG as it's less reliable
+            "PNG Files (*.png);;PDF Files (*.pdf)"
         )
 
         if not file_path:
@@ -379,19 +380,23 @@ class MainWindow(QMainWindow):
 
         # Determine file type
         file_type = file_path.split(".")[-1].lower()
-        if file_type not in ["png", "jpeg", "pdf"]:
+        if file_type not in ["png", "pdf"]:
             self.status_bar.showMessage("Unsupported file format.")
             return
 
         try:
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(file_path) if os.path.dirname(
-                file_path) else '.', exist_ok=True)
+            # Clean up any existing export thread
+            if hasattr(self, 'chart_export_thread'):
+                try:
+                    self.chart_export_thread.stop()
+                    self.chart_export_thread.wait()
+                except:
+                    pass
 
             # Prepare density data and start export thread
             density_df = self.parse_controller.calculate_density()
 
-            # Create a separate thread instance for chart export
+            # Create new thread instance
             self.chart_export_thread = ChartExportWorker(
                 density_df,
                 self.parse_controller.gap_threshold,
@@ -399,15 +404,38 @@ class MainWindow(QMainWindow):
                 file_type,
                 current_df=self.parse_controller.current_df
             )
+
+            # Connect signals
+            self.chart_export_thread.progress.connect(self.on_export_progress)
             self.chart_export_thread.finished.connect(
                 self.on_chart_export_finished)
+
+            # Start the thread
             self.chart_export_thread.start()
 
             print(f"DEBUG: Chart export thread started for {file_path}")
-            self.status_bar.showMessage("Exporting chart...")
+            self.status_bar.showMessage("Starting chart export...")
 
         except Exception as e:
             error_msg = f"Failed to start export: {str(e)}"
             print(f"DEBUG: {error_msg}")
             self.status_bar.showMessage(error_msg)
             self.show_error(error_msg)
+
+    def on_export_progress(self, message):
+        """Handle progress updates from the export thread"""
+        print(f"DEBUG: Export progress - {message}")
+        self.status_bar.showMessage(message)
+
+    def on_chart_export_finished(self, message):
+        """Handle completion of chart export"""
+        print(f"DEBUG: Chart export finished - {message}")
+        self.status_bar.showMessage(message)
+
+        # Clean up the thread
+        if hasattr(self, 'chart_export_thread'):
+            self.chart_export_thread.deleteLater()
+            del self.chart_export_thread
+
+        if "failed" in message.lower():
+            self.show_error(message)

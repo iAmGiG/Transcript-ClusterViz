@@ -1,8 +1,10 @@
 import os
 from PyQt6.QtCore import QThread, pyqtSignal
 import pandas as pd
-import matplotlib.pyplot as plt
 import plotly.express as px
+import plotly.io as pio
+from plotly.io import write_image
+import gc
 
 
 class ExportWorker(QThread):
@@ -53,80 +55,101 @@ class ExportWorker(QThread):
 
 class ChartExportWorker(QThread):
     finished = pyqtSignal(str)
+    progress = pyqtSignal(str)  # Add progress signal
 
     def __init__(self, density_df, gap_threshold, file_path, file_type, current_df=None):
         super().__init__()
-        self.density_df = density_df
+        self.density_df = density_df.copy()  # Create a copy of the data
         self.gap_threshold = gap_threshold
         self.file_path = file_path
         self.file_type = file_type
-        self.current_df = current_df
+        self.current_df = current_df.copy() if current_df is not None else None
+        self.is_running = True
+
+    def stop(self):
+        self.is_running = False
+        self.wait()  # Wait for the thread to finish
+
+    def cleanup(self):
+        """Clean up resources"""
+        self.density_df = None
+        self.current_df = None
+        gc.collect()  # Force garbage collection
 
     def run(self):
         try:
-            print(f"DEBUG: Starting chart export to {self.file_path}")
+            if not self.is_running:
+                return
+
+            self.progress.emit("Starting export process...")
 
             if not self.file_path:
                 raise ValueError("No file path provided for export.")
 
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(self.file_path) if os.path.dirname(
+                self.file_path) else '.', exist_ok=True)
+
             # Add cluster information if available
             if self.current_df is not None and "cluster_id" in self.current_df.columns:
-                print("DEBUG: Adding cluster information to density data")
-                self.density_df = pd.merge(
-                    self.density_df,
-                    self.current_df[["bin_index", "cluster_id"]
-                                    ].drop_duplicates(),
-                    on="bin_index",
-                    how="left"
-                )
+                self.progress.emit("Processing cluster information...")
+                try:
+                    self.density_df = pd.merge(
+                        self.density_df,
+                        self.current_df[["bin_index",
+                                         "cluster_id"]].drop_duplicates(),
+                        on="bin_index",
+                        how="left"
+                    )
+                except Exception as e:
+                    print(f"DEBUG: Merge failed - {str(e)}")
 
-            # Create figure
-            print("DEBUG: Creating plotly figure")
+            if not self.is_running:
+                return
+
+            self.progress.emit("Creating figure...")
+
+            # Set up the renderer
+            pio.kaleido.scope.mathjax = None
+            pio.kaleido.scope.default_format = self.file_type
+
+            # Create figure with minimal styling first
             fig = px.bar(
                 self.density_df,
                 x="time_minutes",
                 y="words_per_bin",
-                labels={
-                    "time_minutes": "Time (minutes)",
-                    "words_per_bin": "Words per Minute"
-                },
                 title=f"Word Density Over Time (Gap Threshold: {self.gap_threshold}s)"
             )
 
-            # Update layout
-            print("DEBUG: Updating figure layout")
-            fig.update_layout(
-                template="plotly_dark",
-                plot_bgcolor="rgba(15,15,15,1)",
-                paper_bgcolor="rgba(15,15,15,1)",
-                font=dict(color="white"),
-                title_font_color="white",
-                height=600
-            )
+            if not self.is_running:
+                return
 
-            print(f"DEBUG: Attempting to write image to {self.file_path}")
+            self.progress.emit("Writing image...")
 
-            # Force static image rendering
-            import plotly.io as pio
-            pio.kaleido.scope.mathjax = None
-
-            # Export with explicit format
-            fig.write_image(
+            # Write image with maximum compatibility settings
+            write_image(
+                fig,
                 self.file_path,
                 format=self.file_type,
                 engine='kaleido',
                 width=1200,
                 height=800,
-                scale=2
+                scale=1
             )
 
-            print("DEBUG: Image write completed successfully")
+            # Clean up
+            fig.data = []
+            fig = None
+            self.cleanup()
+
+            self.progress.emit("Export completed.")
             self.finished.emit(f"Export successful: {self.file_path}")
 
         except Exception as e:
-            error_msg = f"Export failed: {str(e)}"
-            print(f"DEBUG: {error_msg}")
-            print(f"DEBUG: Exception type: {type(e)}")
             import traceback
-            print(f"DEBUG: Traceback: {traceback.format_exc()}")
+            error_msg = f"Export failed: {str(e)}\n{traceback.format_exc()}"
+            print(f"DEBUG: {error_msg}")
             self.finished.emit(error_msg)
+        finally:
+            self.cleanup()
+            self.is_running = False
