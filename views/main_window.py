@@ -354,12 +354,12 @@ class MainWindow(QMainWindow):
         print(f"DEBUG: Chart export finished - {message}")
         self.status_bar.showMessage(message)
 
-        # Clean up the thread
         if hasattr(self, 'chart_export_thread'):
+            self.chart_export_thread.cleanup()
             self.chart_export_thread.deleteLater()
-            del self.chart_export_thread
+            delattr(self, 'chart_export_thread')
 
-        if "failed" in message.lower():
+        if "failed" in message.lower() or "timed out" in message.lower():
             self.show_error(message)
 
     def on_export_finished(self, message):
@@ -374,13 +374,8 @@ class MainWindow(QMainWindow):
         """Handle cleanup when closing the window"""
         # Clean up any running export thread
         if hasattr(self, 'chart_export_thread'):
-            self.chart_export_thread.wait()
+            self.chart_export_thread.cleanup()
             self.chart_export_thread.deleteLater()
-
-        # Clear web view
-        self.web_view.setHtml("")
-
-        # Accept the close event
         event.accept()
 
     def handle_export_chart(self):
@@ -391,17 +386,17 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage("No data available to export.")
             return
 
-        # Clear any existing export thread
+        # Handle any existing export thread
         if hasattr(self, 'chart_export_thread'):
-            try:
-                self.chart_export_thread.wait()
+            if self.chart_export_thread.isRunning():
+                msg = "Previous export still in progress. Please wait or restart the application."
+                self.show_error(msg)
+                return
+            else:
+                # Clean up previous thread
+                self.chart_export_thread.cleanup()
                 self.chart_export_thread.deleteLater()
-            except:
-                pass
-            delattr(self, 'chart_export_thread')
-
-        # Clear webview content - we'll skip saving/restoring since it's not necessary
-        self.web_view.setHtml("")
+                delattr(self, 'chart_export_thread')
 
         # Open file dialog
         file_dialog = QFileDialog()
@@ -422,15 +417,20 @@ class MainWindow(QMainWindow):
             return
 
         try:
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(file_path) if os.path.dirname(
+                file_path) else '.', exist_ok=True)
+
             density_df = self.parse_controller.calculate_density()
 
-            # Create new thread
+            # Create new thread with 30 second timeout
             self.chart_export_thread = ChartExportWorker(
                 density_df,
                 self.parse_controller.gap_threshold,
                 file_path,
                 file_type,
-                current_df=self.parse_controller.current_df
+                current_df=self.parse_controller.current_df,
+                timeout_seconds=30
             )
 
             self.chart_export_thread.progress.connect(self.on_export_progress)
@@ -440,12 +440,6 @@ class MainWindow(QMainWindow):
 
             print(f"DEBUG: Chart export thread started for {file_path}")
             self.status_bar.showMessage("Starting chart export...")
-
-        except Exception as e:
-            error_msg = f"Failed to start export: {str(e)}"
-            print(f"DEBUG: {error_msg}")
-            self.status_bar.showMessage(error_msg)
-            self.show_error(error_msg)
 
         except Exception as e:
             error_msg = f"Failed to start export: {str(e)}"
