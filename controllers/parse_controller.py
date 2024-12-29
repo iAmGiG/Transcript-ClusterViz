@@ -62,7 +62,7 @@ class ParseController:
     def calculate_density(self, df: pd.DataFrame = None):
         """
         Groups subtitles by time bins (in seconds) and computes total word_count per bin.
-        Returns a DataFrame with columns ['time_bin', 'words_per_bin'].
+        Returns a DataFrame with columns ['bin_index', 'words_per_bin', 'time_minutes'].
         """
         if df is None:
             df = self.current_df
@@ -77,6 +77,9 @@ class ParseController:
         df["bin_index"] = (df["start_seconds"] // self.bin_size).astype(int)
         grouped = df.groupby("bin_index")["word_count"].sum().reset_index()
         grouped.rename(columns={"word_count": "words_per_bin"}, inplace=True)
+
+        # Add time in minutes for the x-axis in charts
+        grouped["time_minutes"] = grouped["bin_index"] * (self.bin_size / 60)
 
         # Debug print
         print(f"DEBUG: Density calculation result shape: {grouped.shape}")
