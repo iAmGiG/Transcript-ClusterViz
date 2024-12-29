@@ -55,94 +55,72 @@ class ExportWorker(QThread):
 
 class ChartExportWorker(QThread):
     finished = pyqtSignal(str)
-    progress = pyqtSignal(str)  # Add progress signal
+    progress = pyqtSignal(str)
 
     def __init__(self, density_df, gap_threshold, file_path, file_type, current_df=None):
         super().__init__()
-        self.density_df = density_df.copy()  # Create a copy of the data
+        # Create deep copies to isolate data
+        self.density_df = density_df.copy(deep=True)
         self.gap_threshold = gap_threshold
         self.file_path = file_path
         self.file_type = file_type
-        self.current_df = current_df.copy() if current_df is not None else None
+        self.current_df = current_df.copy(
+            deep=True) if current_df is not None else None
         self.is_running = True
-
-    def stop(self):
-        self.is_running = False
-        self.wait()  # Wait for the thread to finish
-
-    def cleanup(self):
-        """Clean up resources"""
-        self.density_df = None
-        self.current_df = None
-        gc.collect()  # Force garbage collection
 
     def run(self):
         try:
-            if not self.is_running:
-                return
+            import plotly.express as px
+            import plotly.io as pio
 
-            self.progress.emit("Starting export process...")
+            self.progress.emit("Starting export...")
 
-            if not self.file_path:
-                raise ValueError("No file path provided for export.")
-
-            # Ensure directory exists
-            os.makedirs(os.path.dirname(self.file_path) if os.path.dirname(
-                self.file_path) else '.', exist_ok=True)
-
-            # Add cluster information if available
-            if self.current_df is not None and "cluster_id" in self.current_df.columns:
-                self.progress.emit("Processing cluster information...")
-                try:
-                    self.density_df = pd.merge(
-                        self.density_df,
-                        self.current_df[["bin_index",
-                                         "cluster_id"]].drop_duplicates(),
-                        on="bin_index",
-                        how="left"
-                    )
-                except Exception as e:
-                    print(f"DEBUG: Merge failed - {str(e)}")
-
-            if not self.is_running:
-                return
-
-            self.progress.emit("Creating figure...")
-
-            # Set up the renderer
-            pio.kaleido.scope.mathjax = None
-            pio.kaleido.scope.default_format = self.file_type
-
-            # Create figure with minimal styling first
+            # Create basic figure without clustering
             fig = px.bar(
                 self.density_df,
-                x="time_minutes",
-                y="words_per_bin",
-                title=f"Word Density Over Time (Gap Threshold: {self.gap_threshold}s)"
+                x='time_minutes',
+                y='words_per_bin',
+                labels={
+                    'time_minutes': 'Time (minutes)',
+                    'words_per_bin': 'Words per Minute',
+                },
+                title=f'Word Density Over Time (Gap Threshold: {self.gap_threshold}s)'
             )
 
-            if not self.is_running:
-                return
+            # Update layout
+            fig.update_layout(
+                template='plotly_dark',
+                plot_bgcolor='rgba(15,15,15,1)',
+                paper_bgcolor='rgba(15,15,15,1)',
+                font=dict(color='white'),
+                title_font_color='white',
+                height=600
+            )
 
             self.progress.emit("Writing image...")
 
-            # Write image with maximum compatibility settings
-            write_image(
-                fig,
-                self.file_path,
-                format=self.file_type,
-                engine='kaleido',
-                width=1200,
-                height=800,
-                scale=1
-            )
+            # Write with minimal settings
+            renderer = pio.kaleido.scope
+            renderer.default_format = self.file_type
+            renderer.mathjax = None
 
-            # Clean up
+            img_bytes = renderer.transform(
+                fig, format=self.file_type, width=1200, height=800)
+
+            with open(self.file_path, 'wb') as f:
+                f.write(img_bytes)
+
+            self.progress.emit("Cleaning up...")
+            # Force cleanup
             fig.data = []
             fig = None
-            self.cleanup()
+            renderer = None
+            self.density_df = None
+            self.current_df = None
 
-            self.progress.emit("Export completed.")
+            import gc
+            gc.collect()
+
             self.finished.emit(f"Export successful: {self.file_path}")
 
         except Exception as e:
@@ -150,6 +128,6 @@ class ChartExportWorker(QThread):
             error_msg = f"Export failed: {str(e)}\n{traceback.format_exc()}"
             print(f"DEBUG: {error_msg}")
             self.finished.emit(error_msg)
+
         finally:
-            self.cleanup()
             self.is_running = False

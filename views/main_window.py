@@ -246,20 +246,22 @@ class MainWindow(QMainWindow):
                 "No data to plot. Please load an SRT file first.")
             return
 
-        # Ensure clustering is updated before plotting
-        if "cluster_id" not in self.parse_controller.current_df.columns:
-            print("DEBUG: Recalculating clustering as 'cluster_id' is missing.")
-            self.parse_controller.current_df = self.parse_controller.cluster_by_time()
-
         try:
-            # Calculate density and plot
+            # Clear existing web view content
+            self.web_view.setHtml("")
+
+            # Calculate density
             density_df = self.parse_controller.calculate_density()
+
+            # Generate new chart
             chart_html = self.parse_controller.plot_density_chart(density_df)
+
+            # Update web view
             self.web_view.setHtml(chart_html)
-            self.status_bar.showMessage(
-                "Density chart updated with clustering", 5000)
+            self.status_bar.showMessage("Density chart updated", 5000)
+
         except Exception as e:
-            print(f"DEBUG: Error occurred: {str(e)}")
+            print(f"DEBUG: Error in density plotting: {str(e)}")
             self.status_bar.showMessage(
                 f"Error creating density chart: {str(e)}")
 
@@ -348,13 +350,30 @@ class MainWindow(QMainWindow):
         self.status_bar.showMessage("Exporting...")
 
     def on_chart_export_finished(self, message):
-        """
-        Separate handler for chart export completion
-        """
-        print(f"DEBUG: Chart export thread finished with message: {message}")
+        """Handle completion of chart export"""
+        print(f"DEBUG: Chart export finished - {message}")
         self.status_bar.showMessage(message)
+
+        # Clean up the thread
+        if hasattr(self, 'chart_export_thread'):
+            self.chart_export_thread.deleteLater()
+            del self.chart_export_thread
+
         if "failed" in message.lower():
             self.show_error(message)
+
+    def closeEvent(self, event):
+        """Handle cleanup when closing the window"""
+        # Clean up any running export thread
+        if hasattr(self, 'chart_export_thread'):
+            self.chart_export_thread.wait()
+            self.chart_export_thread.deleteLater()
+
+        # Clear web view
+        self.web_view.setHtml("")
+
+        # Accept the close event
+        event.accept()
 
     def handle_export_chart(self):
         """
@@ -364,39 +383,44 @@ class MainWindow(QMainWindow):
             self.status_bar.showMessage("No data available to export.")
             return
 
-        # Open file dialog to select save location and file type
+        # Clear any existing export thread
+        if hasattr(self, 'chart_export_thread'):
+            try:
+                self.chart_export_thread.wait()
+                self.chart_export_thread.deleteLater()
+            except:
+                pass
+            delattr(self, 'chart_export_thread')
+
+        # Clean webview content temporarily
+        current_html = self.web_view.page().toHtml()
+        self.web_view.setHtml("")
+
+        # Open file dialog
         file_dialog = QFileDialog()
         file_path, _ = file_dialog.getSaveFileName(
             self,
             "Save Density Chart As",
             "",
-            # Removed JPEG as it's less reliable
             "PNG Files (*.png);;PDF Files (*.pdf)"
         )
+
+        # Restore webview content
+        self.web_view.setHtml(current_html)
 
         if not file_path:
             self.status_bar.showMessage("Export canceled.")
             return
 
-        # Determine file type
         file_type = file_path.split(".")[-1].lower()
         if file_type not in ["png", "pdf"]:
             self.status_bar.showMessage("Unsupported file format.")
             return
 
         try:
-            # Clean up any existing export thread
-            if hasattr(self, 'chart_export_thread'):
-                try:
-                    self.chart_export_thread.stop()
-                    self.chart_export_thread.wait()
-                except:
-                    pass
-
-            # Prepare density data and start export thread
             density_df = self.parse_controller.calculate_density()
 
-            # Create new thread instance
+            # Create new thread
             self.chart_export_thread = ChartExportWorker(
                 density_df,
                 self.parse_controller.gap_threshold,
@@ -405,12 +429,9 @@ class MainWindow(QMainWindow):
                 current_df=self.parse_controller.current_df
             )
 
-            # Connect signals
             self.chart_export_thread.progress.connect(self.on_export_progress)
             self.chart_export_thread.finished.connect(
                 self.on_chart_export_finished)
-
-            # Start the thread
             self.chart_export_thread.start()
 
             print(f"DEBUG: Chart export thread started for {file_path}")
@@ -426,16 +447,3 @@ class MainWindow(QMainWindow):
         """Handle progress updates from the export thread"""
         print(f"DEBUG: Export progress - {message}")
         self.status_bar.showMessage(message)
-
-    def on_chart_export_finished(self, message):
-        """Handle completion of chart export"""
-        print(f"DEBUG: Chart export finished - {message}")
-        self.status_bar.showMessage(message)
-
-        # Clean up the thread
-        if hasattr(self, 'chart_export_thread'):
-            self.chart_export_thread.deleteLater()
-            del self.chart_export_thread
-
-        if "failed" in message.lower():
-            self.show_error(message)
