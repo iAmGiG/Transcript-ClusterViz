@@ -171,3 +171,4 @@ cython_debug/
 .pypirc
 docs/testexport.png
 docs/testport.csv
+docs/testport.xlsx

@@ -1,17 +1,16 @@
 # transcript_clusterviz/views/main_window.py
 
-from views.export_worker import ExportWorker
-from controllers.parse_controller import ParseController
 import os
-import matplotlib.pyplot as plt
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QMainWindow, QTextEdit, QVBoxLayout, QWidget,
-    QPushButton, QApplication, QFileDialog, QHBoxLayout,
+    QMainWindow, QVBoxLayout, QWidget,
+    QPushButton, QFileDialog, QHBoxLayout,
     QSizePolicy, QSlider, QLabel, QMessageBox, QTabWidget, QStatusBar,
     QTableWidget, QTableWidgetItem
 )
-from PyQt6.QtCore import Qt
 from PyQt6.QtWebEngineWidgets import QWebEngineView
+from utils.export_worker import ExportWorker
+from controllers.parse_controller import ParseController
 
 
 class MainWindow(QMainWindow):
