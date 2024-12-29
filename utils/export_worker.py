@@ -70,10 +70,11 @@ class ChartExportWorker(QThread):
 
     def run(self):
         try:
-            import plotly.express as px
-            import plotly.io as pio
-
             self.progress.emit("Starting export...")
+
+            # Ensure directory exists
+            os.makedirs(os.path.dirname(self.file_path) if os.path.dirname(
+                self.file_path) else '.', exist_ok=True)
 
             # Create basic figure without clustering
             fig = px.bar(
@@ -94,27 +95,24 @@ class ChartExportWorker(QThread):
                 paper_bgcolor='rgba(15,15,15,1)',
                 font=dict(color='white'),
                 title_font_color='white',
-                height=600
+                height=600,
+                width=1200
             )
 
             self.progress.emit("Writing image...")
 
-            # Write with minimal settings
-            renderer = pio.kaleido.scope
-            renderer.default_format = self.file_type
-            renderer.mathjax = None
-
-            img_bytes = renderer.transform(
-                fig, format=self.file_type, width=1200, height=800)
-
-            with open(self.file_path, 'wb') as f:
-                f.write(img_bytes)
+            # Write image directly
+            fig.write_image(
+                self.file_path,
+                format=self.file_type,
+                engine='kaleido',
+                scale=2
+            )
 
             self.progress.emit("Cleaning up...")
             # Force cleanup
             fig.data = []
             fig = None
-            renderer = None
             self.density_df = None
             self.current_df = None
 
