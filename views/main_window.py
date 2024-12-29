@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QTableWidget, QTableWidgetItem
 )
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from utils.export_worker import ExportWorker
+from utils.export_worker import ExportWorker, ChartExportWorker
 from controllers.parse_controller import ParseController
 
 
@@ -86,8 +86,11 @@ class MainWindow(QMainWindow):
 
         # Add density button
         self.density_button = QPushButton("Plot Density Chart")
+        self.export_chart_button = QPushButton("Export Chart")
+        self.export_chart_button.clicked.connect(self.handle_export_chart)
         self.density_button.clicked.connect(self.handle_density)
         density_controls_layout.addWidget(self.density_button)
+        density_controls_layout.addWidget(self.export_chart_button)
 
         # Add bin size slider
         slider_container = QWidget()
@@ -347,5 +350,47 @@ class MainWindow(QMainWindow):
     def on_export_finished(self, message):
         """
         Handle completion of the export thread.
+        """
+        self.status_bar.showMessage(message)
+
+    def handle_export_chart(self):
+        """
+        Exports the density chart as an image or PDF using Plotly.
+        """
+        if self.parse_controller.current_df is None:
+            self.status_bar.showMessage("No data available to export.")
+            return
+
+        # Open file dialog to select save location and file type
+        file_dialog = QFileDialog()
+        file_path, _ = file_dialog.getSaveFileName(
+            self,
+            "Save Density Chart As",
+            "",
+            "PNG Files (*.png);;JPEG Files (*.jpeg);;PDF Files (*.pdf)"
+        )
+
+        if not file_path:
+            self.status_bar.showMessage("Export canceled.")
+            return
+
+        # Determine file type
+        file_type = file_path.split(".")[-1].lower()
+        if file_type not in ["png", "jpeg", "pdf"]:
+            self.status_bar.showMessage("Unsupported file format.")
+            return
+
+        # Start export in a separate thread
+        density_df = self.parse_controller.calculate_density()
+        self.export_thread = ChartExportWorker(
+            density_df, self.parse_controller.gap_threshold, file_path, file_type)
+        self.export_thread.finished.connect(self.on_export_finished)
+        self.export_thread.start()
+
+        self.status_bar.showMessage("Exporting chart...")
+
+    def on_export_finished(self, message):
+        """
+        Handle completion of the chart export thread.
         """
         self.status_bar.showMessage(message)
