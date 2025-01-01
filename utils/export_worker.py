@@ -1,10 +1,10 @@
-import os
+# import os
 from PyQt6.QtCore import QThread, pyqtSignal, QTimer
-import pandas as pd
-import plotly.express as px
-import plotly.io as pio
-from plotly.io import write_image
-import gc
+# import pandas as pd
+# import plotly.express as px
+# import plotly.io as pio
+# from plotly.io import write_image
+# import gc
 import matplotlib.pyplot as plt
 import matplotlib
 
