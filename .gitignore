@@ -169,3 +169,7 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+docs/testexport.png
+docs/testport.csv
+docs/testport.xlsx
+docs/chartout.png
