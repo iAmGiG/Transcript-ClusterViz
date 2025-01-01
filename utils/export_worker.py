@@ -5,7 +5,8 @@ import plotly.express as px
 import plotly.io as pio
 from plotly.io import write_image
 import gc
-
+import matplotlib.pyplot as plt
+import matplotlib
 
 class ExportWorker(QThread):
     finished = pyqtSignal(str)  # Signal to indicate export completion
@@ -85,9 +86,6 @@ class ChartExportWorker(QThread):
 
             self.progress.emit("Starting export...")
 
-            # Use matplotlib instead of plotly
-            import matplotlib.pyplot as plt
-            import matplotlib
             matplotlib.use('Agg')  # Non-interactive backend
 
             # Create figure and axis
