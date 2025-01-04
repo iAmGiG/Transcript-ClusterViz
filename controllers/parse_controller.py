@@ -4,6 +4,7 @@ import pandas as pd
 from core.parse_srt import SRTParser
 import plotly.express as px
 import plotly.io as pio
+import spacy as sp
 
 pio.templates.default = "plotly_dark"
 
