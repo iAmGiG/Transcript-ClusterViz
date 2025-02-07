@@ -88,7 +88,6 @@ class ParseController:
 
         return grouped
 
-
     def plot_density_chart(self, density_df: pd.DataFrame):
         """
         Creates a Plotly figure for words-per-bin vs. time_bin, with cluster visualization.
@@ -139,3 +138,15 @@ class ParseController:
                 'displayModeBar': False
             }
         )
+
+    def calculate_cluster_statistics(self) -> dict:
+        if self.current_df is None or 'cluster_id' not in self.current_df.columns:
+            return {}
+
+        stats = {
+            'num_clusters': self.current_df['cluster_id'].nunique(),
+            'avg_duration': self.current_df.groupby('cluster_id').apply(
+                lambda x: x['end_seconds'].max() - x['start_seconds'].min()).mean(),
+            'words_per_cluster': self.current_df.groupby('cluster_id')['word_count'].sum().mean()
+        }
+        return stats
